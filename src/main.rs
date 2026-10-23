@@ -585,11 +585,11 @@ async fn main() {
         .route("/api/password", post(change_password))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind("[::]:3000")
         .await
         .expect("端口绑定失败");
 
-    println!("服务器已启动: http://127.0.0.1:3000");
+    println!("服务器已启动: http://[::]:3000");
     axum::serve(listener, app).await.expect("服务器运行失败");
 }
 
