@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+//use std::fs::read_to_string;
 use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
@@ -83,5 +83,5 @@ pub fn unauthorized_json() -> Response {
 
 
 pub fn render_me(username: &str) -> String {
-    read_to_string("assets/me.html").expect("me.html not found").replace("{{USERNAME}}", &html_escape(username))
+    include_str!("./assets/me.html").replace("{{USERNAME}}", &html_escape(username))
 }

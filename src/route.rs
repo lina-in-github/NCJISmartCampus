@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+//use std::fs::read_to_string;
 
 use axum::{
     extract::{Form, State},
@@ -8,7 +8,7 @@ use axum::{
 };
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
-use sha2::Digest;
+//use sha2::Digest;
 
 use crate::tools::{bad, cookie_token, create_session, current_user_id, error_page, hash_password, html_escape, rand_string, render_me, unauthorized_json, with_session_cookie};
 use crate::types::{AppState, ChangePw, LoginForm, RegisterForm, SavePage};
@@ -16,7 +16,7 @@ pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Response {
     if current_user_id(&st, &headers).is_some() {
         Redirect::to("/me").into_response()
     } else {
-        let login_html=read_to_string("assets/login.html").expect("login.html not found");
+        let login_html=include_str!("./assets/login.html");
         Html(login_html).into_response()
     }
 }

@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post}, Router,
 };
 use rusqlite::Connection;
-use sha2::Digest;
+//use sha2::Digest;
 
 use crate::route::{change_password, get_page, index, login, logout, me_page, raw_page, register, save_page};
 use crate::types::{AppState, SCHEMA};
@@ -15,10 +15,6 @@ mod route;
 
 
 
-// ---------- Handlers ----------
-
-
-// ---------- main ----------
 
 #[tokio::main]
 async fn main() {
@@ -45,7 +41,7 @@ async fn main() {
         .await
         .expect("端口绑定失败");
 
-    println!("服务器已启动: http://[::]:3000");
+    println!("服务器已启动: http://localhost:3000");
     axum::serve(listener, app).await.expect("服务器运行失败");
 }
 
