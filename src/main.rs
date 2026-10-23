@@ -1,23 +1,14 @@
 use std::collections::HashMap;
-use std::fs::read_to_string;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Form, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
-    Json, Router,
+    routing::{get, post}, Router,
 };
-use rand::{distributions::Alphanumeric, Rng};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
-use serde_json::json;
-use sha2::{Digest, Sha256};
+use rusqlite::Connection;
+use sha2::Digest;
 
 use crate::route::{change_password, get_page, index, login, logout, me_page, raw_page, register, save_page};
-use crate::tools::{bad, cookie_token, create_session, current_user_id, error_page, hash_password, html_escape, rand_string, render_me, unauthorized_json, with_session_cookie};
-use crate::types::{AppState, ChangePw, LoginForm, RegisterForm, SCHEMA, SavePage};
+use crate::types::{AppState, SCHEMA};
 mod types;
 mod tools;
 mod route;

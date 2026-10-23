@@ -1,22 +1,17 @@
-use std::collections::HashMap;
 use std::fs::read_to_string;
-use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Form, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
-    Json, Router,
+    Json,
 };
-use rand::{distributions::Alphanumeric, Rng};
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::Deserialize;
+use rusqlite::{params, OptionalExtension};
 use serde_json::json;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 
 use crate::tools::{bad, cookie_token, create_session, current_user_id, error_page, hash_password, html_escape, rand_string, render_me, unauthorized_json, with_session_cookie};
-use crate::types::{AppState, ChangePw, LoginForm, RegisterForm, SCHEMA, SavePage};
+use crate::types::{AppState, ChangePw, LoginForm, RegisterForm, SavePage};
 pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Response {
     if current_user_id(&st, &headers).is_some() {
         Redirect::to("/me").into_response()

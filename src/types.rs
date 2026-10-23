@@ -1,18 +1,7 @@
 use std::collections::HashMap;
-use std::fs::read_to_string;
 use std::sync::{Arc, Mutex};
-use axum::{
-    extract::{Form, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
-    Json, Router,
-};
-use rand::{distributions::Alphanumeric, Rng};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::Deserialize;
-use serde_json::json;
-use sha2::{Digest, Sha256};
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
