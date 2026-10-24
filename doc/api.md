@@ -174,6 +174,40 @@ curl -s http://localhost:3000/api/upload \
 
 不是 JSON 对象的 `desc`（普通文字说明）不会被拦截，因此「仍允许 API 直接提交」的约定依然成立。
 
+### 1.2 答题卡模式（`answer sheet`）
+
+答题卡是问卷的派生模式：表单项目在 `id` 之外**必须**再带 `data-answer`（正确答案）与 `data-score`（分值），
+所有项目都必填，提交时由前端自动批改，并把正误与分数追加在提交内容（`desc`）末尾的 `__grade` 对象里。
+
+```json
+{
+  "auth": "SC-STU-DEMO-2026",
+  "which": "sub_xxxxxxxxxxxx",
+  "title": "bot-upload",
+  "desc": "{\"form_q1\":\"2\",\"form_q2\":\"b\",\"form_q3\":\"off\",\"__grade\":{\"score\":8,\"full\":10,\"right\":2,\"count\":3,\"detail\":{\"form_q1\":{\"ok\":true,\"score\":5,\"answer\":\"2\"},\"form_q2\":{\"ok\":true,\"score\":3,\"answer\":\"b\"},\"form_q3\":{\"ok\":false,\"score\":0,\"answer\":\"on\"}}}}"
+}
+```
+
+| `__grade` 字段 | 说明 |
+| --- | --- |
+| `score` / `full` | 实得分 / 满分 |
+| `right` / `count` | 答对题数 / 总题数 |
+| `detail[<id>]` | 单题结果：`ok`（是否正确）、`score`（得分）、`answer`（正确答案） |
+
+比对规则（前端）：
+
+- `input`：先做 `trim` + 忽略大小写比较，`data-answer` 可用 `|` 给多个可接受答案（如 `A|a|甲`）；
+- `checkbox`：多选组成集合比较（与顺序无关），`data-answer` 用 `,` / `，` / `、` 分隔正确选项；
+  单选项勾选时的值为其 `value`（缺省 `on`），未勾选为空字符串，即 `data-answer="on"` 表示「应勾选」；
+- `switch`：`on` / `off` 比较（也接受 `true`/`false`、`1`/`0`）。
+
+发布答题卡时服务端会校验简介：至少有一项合法的 `<input/>` / `<checkbox/>` / `<switch/>`，
+且每项都带 `id`（`form_` 前缀）、`data-answer`、`data-score`（多选组的后续选项可省略后两者），
+否则 `/api/new-submission` 返回 `400`。提交时服务端要求所有题目的 id 都出现在 `desc` 的 JSON 里。
+
+> 前端批改意味着正确答案会随页面下发（`data-answer` 属性），适合练习、自测类场景；
+> 需要防作弊的正式考试请改为服务端批改。
+
 ```bash
 # 老师发布问卷：简介里写题目
 curl -s $BASE/api/new-submission -H 'Content-Type: application/json' -d '{
@@ -283,7 +317,7 @@ curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
 | `auth` | string | ✅ | 老师/管理员密钥 |
 | `name` | string | ✅ | 征集名称，≤200 字 |
 | `desc` | string | — | 说明，≤2000 字 |
-| `type` | string | — | 例：`homework`、`open call`、`leave request`、`survey`（问卷）、`notice`，缺省 `homework` |
+| `type` | string | — | 例：`homework`、`open call`、`leave request`、`survey`（问卷）、`answer sheet`（答题卡）、`notice`，缺省 `homework` |
 | `deadLine` | string / number / null | — | 截止时间 |
 
 ### 响应
@@ -603,7 +637,8 @@ curl -s $BASE/api/del-object \
   -d "{\"auth\":\"SC-ADM-DEMO-2026\",\"id\":\"$SUB\"}"
 ```
 
-问卷征集（`type: "survey"`）的提交见 [1.1 问卷模式](#11-问卷模式survey)。
+问卷与答题卡征集（`type: "survey"` / `"answer sheet"`）的提交见 [1.1 问卷模式](#11-问卷模式survey)
+与 [1.2 答题卡模式](#12-答题卡模式answer-sheet)。
 
 ---
 

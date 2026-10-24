@@ -659,7 +659,8 @@
   }
 
   // ---------------------------------------------------------------------
-  // 问卷：简介里的控件 -> JSON -> bot 提交（title=bot-upload）
+  // 问卷 / 答题卡：简介里的控件 -> JSON -> bot 提交（title=bot-upload）
+  // 答题卡额外在前端自动批改，把正误与分数追加到提交内容末尾（__grade）
   // ---------------------------------------------------------------------
 
   function surveyValues(form) {
@@ -691,6 +692,75 @@
     return out;
   }
 
+  function normalizeText(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  function normalizeSwitch(value) {
+    var s = normalizeText(value);
+    if (s === "true" || s === "1" || s === "yes" || s === "on") return "on";
+    if (s === "false" || s === "0" || s === "no" || s === "off" || s === "") return "off";
+    return s;
+  }
+
+  function optionSet(text) {
+    return String(text || "")
+      .split(/[,，、]/)
+      .map(normalizeText)
+      .filter(Boolean)
+      .sort()
+      .join("|");
+  }
+
+  function round2(n) {
+    return Math.round(n * 100) / 100;
+  }
+
+  // 逐题比对 data-answer，按 data-score 计分（答对得满分，答错 0 分）。
+  function gradeSheet(form, values) {
+    var groups = {};
+    $$("[data-survey-kind]", form).forEach(function (el) {
+      var key = el.getAttribute("data-survey-id") || el.id;
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(el);
+    });
+    var grade = { score: 0, full: 0, right: 0, count: 0, detail: {} };
+    Object.keys(groups).forEach(function (key) {
+      var first = groups[key][0];
+      var kind = first.getAttribute("data-survey-kind");
+      var expected = first.getAttribute("data-answer") || "";
+      var score = parseFloat(first.getAttribute("data-score"));
+      if (!isFinite(score) || score < 0) score = 0;
+      var got = values[key] === null || values[key] === undefined ? "" : String(values[key]);
+      var ok = false;
+      if (kind === "checkbox") {
+        ok = optionSet(expected) !== "" && optionSet(expected) === optionSet(got);
+      } else if (kind === "switch") {
+        ok = normalizeSwitch(got) === normalizeSwitch(expected);
+      } else {
+        ok =
+          expected
+            .split("|")
+            .map(normalizeText)
+            .filter(Boolean)
+            .indexOf(normalizeText(got)) >= 0;
+      }
+      grade.detail[key] = { ok: ok, score: ok ? score : 0, answer: expected };
+      grade.full += score;
+      grade.count += 1;
+      if (ok) {
+        grade.score += score;
+        grade.right += 1;
+      }
+    });
+    grade.score = round2(grade.score);
+    grade.full = round2(grade.full);
+    return grade;
+  }
+
   $$("form[data-survey-form]").forEach(function (form) {
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
@@ -713,6 +783,14 @@
         toast(S("toast_missing_submission"), "error");
         return;
       }
+      // 答题卡：自动批改，并把正误与分数追加在提交内容末尾（__grade）。
+      var answerSheet = form.hasAttribute("data-answer-sheet");
+      var done = S("toast_survey_submitted");
+      if (answerSheet) {
+        var grade = gradeSheet(form, values);
+        values.__grade = grade;
+        done = S("toast_answer_sheet_submitted", grade.score, grade.full);
+      }
       setLoading(btn, true, S("toast_submitting"));
       try {
         var r = await api("/api/upload", {
@@ -722,10 +800,9 @@
           desc: JSON.stringify(values),
           data: []
         });
-        toast(S("toast_survey_submitted"), "ok");
+        toast(done, "ok");
         setTimeout(function () {
-          location.href =
-            SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent(S("toast_survey_submitted"));
+          location.href = SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent(done);
         }, 300);
       } catch (err) {
         setLoading(btn, false);

@@ -51,6 +51,7 @@ name=type_homework lines=0 content=作业
 name=type_open_call lines=0 content=公开征集
 name=type_leave_request lines=0 content=请假申请
 name=type_survey lines=0 content=问卷
+name=type_answer_sheet lines=0 content=答题卡
 name=type_notice lines=0 content=通知
 name=type_other lines=0 content=其他
 name=type_generic lines=0 content=征集
@@ -196,6 +197,7 @@ name=new_tip2 lines=0 content=2. 截止时间按北京时间显示，学生端�
 name=new_tip3 lines=0 content=3. 学生可多次上传；老师可以在提交详情中逐条回复。
 name=new_tip4 lines=0 content=4. 发布后管理员可以删除该征集，请确认内容无误。
 name=new_tip_survey lines=0 content=5. 类型选「问卷」时，简介里可用 &lt;input id=&quot;form_x&quot; required/&gt;、&lt;checkbox id=&quot;form_y&quot; value=&quot;选项&quot;/&gt;、&lt;switch id=&quot;form_z&quot;/&gt; 定义题目，id 必须以 form_ 开头。
+name=new_tip_answer_sheet lines=0 content=6. 类型选「答题卡」时，每题都必须写 data-answer 与 data-score（如 &lt;input id=&quot;form_q1&quot; data-answer=&quot;2&quot; data-score=&quot;5&quot;/&gt;），提交后由前端自动批改并计分。
 name=new_current_class lines=0 content=当前班级
 name=new_publish_identity lines=0 content=发布身份
 name=new_data_scope lines=0 content=数据范围
@@ -296,6 +298,19 @@ name=survey_answer_empty lines=0 content=未填写
 name=survey_switch_on lines=0 content=开
 name=survey_switch_off lines=0 content=关
 name=survey_tip lines=0 content=提示：问卷可以重复提交；每次提交都会单独保存，老师能看到全部回答。
+name=answer_sheet_form_page_title lines=0 content=答题卡「{}」
+name=answer_sheet_form_subtitle lines=0 content=所有题目均为必答，提交后自动批改并计分。
+name=answer_sheet_submit lines=0 content=提交并自动批改
+name=answer_sheet_fill lines=0 content=开始答题
+name=answer_sheet_back_detail lines=0 content=返回答题卡详情
+name=answer_sheet_all_required lines=0 content=全部必答
+name=answer_sheet_all_hint lines=0 content=提交后自动批改，得分与正误会显示在下方列表的提交里。
+name=answer_sheet_no_fields lines=0 content=这份答题卡暂时没有题目。
+name=answer_sheet_tip lines=0 content=提示：答案在提交时会由浏览器自动批改，结果追加在提交内容末尾；可以重复作答，每次提交都会单独保存。
+name=answer_sheet_grade_title lines=0 content=自动批改结果
+name=answer_sheet_item_score lines=0 content={} 分
+name=answer_sheet_expected lines=0 content=（正确答案：{}）
+name=answer_sheet_right lines=0 content=正确 {} / {} 题
 name=account_back_login lines=0 content=返回角色登录
 name=account_login_desc lines=0 content=使用用户名与密码登录，管理你绑定的班级身份与个人偏好。
 name=account_username lines=0 content=用户名
@@ -402,6 +417,7 @@ name=toast_submitting lines=0 content=提交中…
 name=toast_uploaded lines=0 content=上传成功
 name=toast_survey_submitted lines=0 content=问卷已提交
 name=toast_survey_required lines=0 content=请填写必填项
+name=toast_answer_sheet_submitted lines=0 content=已提交并自动批改：{} / {} 分
 name=toast_submission_name_required lines=0 content=请填写征集名称
 name=toast_publishing lines=0 content=发布中…
 name=toast_submission_published lines=0 content=征集已发布

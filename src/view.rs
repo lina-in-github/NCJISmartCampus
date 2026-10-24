@@ -211,6 +211,9 @@ fn type_label(kind: &str) -> String {
         }
         "notice" => crate::strings::t("type_notice"),
         "survey" => crate::strings::t("type_survey"),
+        "answer sheet" | "answer_sheet" | "answersheet" | "sheet" => {
+            crate::strings::t("type_answer_sheet")
+        }
         "other" => crate::strings::t("type_other"),
         "" => crate::strings::t("type_generic"),
         other => truncate_chars(other, 14),
@@ -1223,6 +1226,16 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
     } else {
         String::new()
     };
+    // 答题卡：列表里直接显示自动批改得分，方便老师扫一眼。
+    let score_chip = crate::survey::grade_of("", &upload.desc)
+        .map(|g| {
+            format!(
+                r#"<span class="chip ok">{} / {}</span>"#,
+                crate::survey::format_score(g.score),
+                crate::survey::format_score(g.full)
+            )
+        })
+        .unwrap_or_default();
     format!(
         r#"<div class="list-row">
   <a class="card-link" href="{href}" aria-label="@[strings/common_view]@[strings/page_uploads] {title}"></a>
@@ -1237,7 +1250,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
       <span>{time}</span>
     </div>
   </div>
-  <div class="row-side">{status}{arrow}</div>
+  <div class="row-side">{score_chip}{status}{arrow}</div>
 </div>"#,
         href = esc(&href),
         avatar_class = avatar_class(&upload.role),
@@ -1253,6 +1266,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
         },
         time = esc(&relative_time(upload.created_at, now)),
         status = upload_status(upload),
+        score_chip = score_chip,
         arrow = icon("chevron-right")
     )
 }
@@ -1571,12 +1585,17 @@ pub fn uploads(
 }
 
 // ---------------------------------------------------------------------------
-// 问卷模式
+// 问卷 / 答题卡模式
 // ---------------------------------------------------------------------------
 
-/// 问卷表单：简介被渲染成可填写的控件，末尾统一由 bot 提交（`title=bot-upload`）。
-fn survey_form_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> String {
-    let survey = crate::survey::Survey::parse(&sub.desc);
+/// 表单模式下的表单体：问卷（人工批阅）或答题卡（前端自动批改）。
+/// 简介被渲染成可填写的控件，末尾统一由 bot 提交（`title=bot-upload`）。
+fn form_block_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> String {
+    let Some(mode) = crate::survey::kind_mode(&sub.kind) else {
+        return String::new();
+    };
+    let survey = crate::survey::Survey::parse_mode(&sub.desc, mode);
+    let sheet = survey.mode().is_answer_sheet();
     if survey.is_empty() {
         // 简介里没有任何控件：只展示文字，并提示没有可填写的题目。
         let desc = if sub.desc.trim().is_empty() {
@@ -1584,9 +1603,13 @@ fn survey_form_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> Strin
         } else {
             format!(r#"<p class="desc-text">{}</p>"#, esc(&sub.desc))
         };
-        return format!(r#"{desc}<p class="survey-hint">@[strings/survey_no_fields]</p>"#);
+        let hint = if sheet {
+            "@[strings/answer_sheet_no_fields]"
+        } else {
+            "@[strings/survey_no_fields]"
+        };
+        return format!(r#"{desc}<p class="survey-hint">{hint}</p>"#);
     }
-    let body = survey.to_html();
     let cancel = if cancel_link.is_empty() {
         String::new()
     } else {
@@ -1600,25 +1623,38 @@ fn survey_form_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> Strin
     } else {
         format!(r#"<span class="hint">{}</span>"#, esc(hint))
     };
+    // 答题卡：标记给前端做自动批改，题面额外提示「全部必答」。
+    let (marker, submit_label, extra_hint) = if sheet {
+        (
+            r#" data-answer-sheet="1""#,
+            "@[strings/answer_sheet_submit]",
+            r#"<span class="chip warn">@[strings/answer_sheet_all_required]</span>"#,
+        )
+    } else {
+        ("", "@[strings/survey_submit]", "")
+    };
     format!(
-        r#"<form class="survey-form" id="survey-form" data-survey-form data-submission="{id}">{body}
-<div class="form-actions"><button class="btn primary" type="submit" id="survey-submit" data-survey-submit>{send}@[strings/survey_submit]</button>{cancel}<span class="spacer"></span>{hint}</div></form>"#,
+        r#"<form class="survey-form" id="survey-form" data-survey-form{marker} data-submission="{id}">{body}
+<div class="form-actions"><button class="btn primary" type="submit" id="survey-submit" data-survey-submit>{send}{submit_label}</button>{cancel}{extra_hint}<span class="spacer"></span>{hint}</div></form>"#,
+        marker = marker,
         id = esc(&sub.id),
-        body = body,
+        body = survey.to_html(),
         send = icon("send"),
+        submit_label = submit_label,
         cancel = cancel,
+        extra_hint = extra_hint,
         hint = hint
     )
 }
 
-/// 提交详情的正文：问卷回答（JSON）渲染成键值列表，其他情况保持纯文本。
+/// 提交详情的正文：表单回答（JSON）渲染成键值列表 + 批改结果，其他情况保持纯文本。
 fn upload_content_html(sub: &SubmissionRow, upload: &UploadRow) -> String {
     if upload.desc.trim().is_empty() {
         return r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string();
     }
-    if sub.is_survey() {
-        if let Some(rows) = crate::survey::answer_rows(&sub.desc, &upload.desc) {
-            let rows: String = rows
+    if let Some(mode) = crate::survey::kind_mode(&sub.kind) {
+        if let Some(rows) = crate::survey::answer_rows(&sub.desc, &upload.desc, mode) {
+            let answers: String = rows
                 .into_iter()
                 .map(|(label, value)| {
                     let shown = if value.trim().is_empty() {
@@ -1633,10 +1669,70 @@ fn upload_content_html(sub: &SubmissionRow, upload: &UploadRow) -> String {
                     )
                 })
                 .collect();
-            return format!(r#"<div class="stack">{rows}</div>"#);
+            let grade = if mode.is_answer_sheet() {
+                grade_html(sub, &upload.desc)
+            } else {
+                String::new()
+            };
+            return format!(r#"<div class="stack">{answers}</div>{grade}"#);
         }
     }
     format!(r#"<p class="desc-text">{}</p>"#, esc(&upload.desc))
+}
+
+/// 答题卡批改结果（正误 + 分数），由前端在提交时算好并追加在内容末尾。
+fn grade_html(sub: &SubmissionRow, answer: &str) -> String {
+    let Some(grade) = crate::survey::grade_of(&sub.desc, answer) else {
+        return String::new();
+    };
+    let rows: String = grade
+        .detail
+        .iter()
+        .map(|item| {
+            let mark = if item.ok {
+                format!(
+                    r#"<span class="grade-mark ok">{}</span>"#,
+                    icon("check-circle")
+                )
+            } else {
+                format!(r#"<span class="grade-mark bad">{}</span>"#, icon("x"))
+            };
+            let expected = if item.ok || item.answer.trim().is_empty() {
+                String::new()
+            } else {
+                // 开关题的正确答案用本地化的开 / 关展示。
+                let text = if item.kind == crate::survey::FieldKind::Switch {
+                    switch_text(&item.answer)
+                } else {
+                    item.answer.clone()
+                };
+                crate::strings::f1("answer_sheet_expected", esc(&text))
+            };
+            format!(
+                r#"<div class="kv"><dt>{mark}{}</dt><dd>{}{}</dd></div>"#,
+                esc(&item.label),
+                crate::strings::f1(
+                    "answer_sheet_item_score",
+                    crate::survey::format_score(item.score)
+                ),
+                expected
+            )
+        })
+        .collect();
+    format!(
+        r#"<div class="grade-card">
+  <div class="grade-head">
+    <span class="grade-title">@[strings/answer_sheet_grade_title]</span>
+    <span class="grade-score">{score} / {full}</span>
+    <span class="hint">{right}</span>
+  </div>
+  <div class="stack">{rows}</div>
+</div>"#,
+        score = crate::survey::format_score(grade.score),
+        full = crate::survey::format_score(grade.full),
+        right = crate::strings::f2("answer_sheet_right", grade.right, grade.count),
+        rows = rows
+    )
 }
 
 /// 问卷开关的答案用本地化文案展示（存储值仍是 `on` / `off`）。
@@ -1680,7 +1776,9 @@ pub fn submission_all(
         String::new()
     };
     let upload_btn = if can_upload {
-        let label = if sub.is_survey() {
+        let label = if sub.is_answer_sheet() {
+            "@[strings/answer_sheet_fill]"
+        } else if sub.is_survey() {
             "@[strings/survey_fill]"
         } else {
             "@[strings/page_upload]"
@@ -1735,12 +1833,13 @@ pub fn submission_all(
         delete = delete,
         type_label = esc(&type_label(&sub.kind)),
         deadline = deadline_badge(sub.deadline, now),
-        desc = if sub.is_survey() {
-            survey_form_html(
-                sub,
-                &format!("{base}submissions/"),
-                "@[strings/survey_all_hint]",
-            )
+        desc = if sub.is_form() {
+            let hint = if sub.is_answer_sheet() {
+                "@[strings/answer_sheet_all_hint]"
+            } else {
+                "@[strings/survey_all_hint]"
+            };
+            form_block_html(sub, &format!("{base}submissions/"), hint)
         } else if sub.desc.trim().is_empty() {
             r#"<p class="desc-text">@[strings/submission_all_no_desc]</p>"#.to_string()
         } else {
@@ -1835,8 +1934,8 @@ pub fn upload_form(
     existing: i64,
     last_id: Option<&str>,
 ) -> String {
-    if sub.is_survey() {
-        return survey_upload_page(ctx, sub, existing, last_id);
+    if sub.is_form() {
+        return form_upload_page(ctx, sub, existing, last_id);
     }
     let now = crate::tools::now_ts();
     let base = ctx.base();
@@ -1892,13 +1991,14 @@ pub fn upload_form(
     layout(ctx, &body)
 }
 
-/// 问卷模式的上传页：关闭默认上传表单，改为填写简介里的控件。
-fn survey_upload_page(
+/// 问卷 / 答题卡的上传页：关闭默认上传表单，改为填写简介里的控件。
+fn form_upload_page(
     ctx: &LayoutCtx,
     sub: &SubmissionRow,
     existing: i64,
     last_id: Option<&str>,
 ) -> String {
+    let sheet = sub.is_answer_sheet();
     let now = crate::tools::now_ts();
     let base = ctx.base();
     let parent = ctx.page_role == "parent";
@@ -1922,14 +2022,32 @@ fn survey_upload_page(
             )
         })
         .unwrap_or_default();
+    let (title_key, subtitle_key, back_key, tip_key) = if sheet {
+        (
+            "answer_sheet_form_page_title",
+            "answer_sheet_form_subtitle",
+            "answer_sheet_back_detail",
+            "answer_sheet_tip",
+        )
+    } else {
+        (
+            "survey_form_page_title",
+            "survey_form_subtitle",
+            "survey_back_detail",
+            "survey_tip",
+        )
+    };
     let body = format!(
         include_str!("./views/survey_form.html"),
         base = base,
         arrow = icon("arrow-left"),
         id = esc(&sub.id),
         name = esc(&sub.name),
-        page_title = esc(&crate::strings::f1("survey_form_page_title", &sub.name)),
-        form = survey_form_html(sub, &format!("{base}submission/{}/all", sub.id), ""),
+        page_title = esc(&crate::strings::f1(title_key, &sub.name)),
+        subtitle = esc(&crate::strings::t(subtitle_key)),
+        back_label = esc(&crate::strings::t(back_key)),
+        tip = esc(&crate::strings::t(tip_key)),
+        form = form_block_html(sub, &format!("{base}submission/{}/all", sub.id), ""),
         folder = icon("folder"),
         type_label = esc(&type_label(&sub.kind)),
         deadline = deadline_badge(sub.deadline, now),

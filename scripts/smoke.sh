@@ -199,6 +199,62 @@ assert_jq "$(post /api/upload "{\"auth\":\"$STUDENT\",\"which\":\"$SURVEY\",\"ti
   '.ok == true' "问卷仍允许 API 直接提交"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SURVEY\"}")" '.ok == true' "删除问卷征集"
 
+echo "==> 答题卡模式（问卷派生：全必填 + 前端自动批改）"
+SHEET_DESC='1 + 1 = <input id="form_q1" data-answer="2" data-score="5"/>
+选出正确答案：<checkbox id="form_q2" value="a" data-answer="b" data-score="3"/>A <checkbox id="form_q2" value="b"/>B
+地球是圆的：<switch id="form_q3" data-answer="on" data-score="2"/>'
+SHEET_BODY="$(jq -nc --arg a "$TEACHER" --arg n "答题卡征集" --arg d "$SHEET_DESC" \
+  '{auth:$a,name:$n,desc:$d,type:"answer sheet"}')"
+SHEET_JSON="$(post /api/new-submission "$SHEET_BODY")"
+assert_jq "$SHEET_JSON" '.ok == true and (.id | startswith("sub_"))' "发布答题卡征集"
+SHEET="$(echo "$SHEET_JSON" | jq -r .id)"
+
+# 缺少 data-answer / data-score 的答题卡不允许发布
+BROKEN_BODY="$(jq -nc --arg a "$TEACHER" '{auth:$a,name:"坏答题卡",desc:"1+1=<input id=\"form_q1\"/>",type:"answer sheet"}')"
+assert_eq "$(http_code /api/new-submission "$BROKEN_BODY")" "400" "答题卡缺少 data-answer"
+
+SHEET_DETAIL="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submission/$SHEET/all")"
+grep -q 'data-answer-sheet="1"' <<<"$SHEET_DETAIL" || fail "答题卡详情页缺少自动批改标记"
+grep -q 'data-answer="2"' <<<"$SHEET_DETAIL" || fail "答题卡未下发 data-answer"
+grep -q 'data-score="5"' <<<"$SHEET_DETAIL" || fail "答题卡未下发 data-score"
+[[ "$(grep -o 'required' <<<"$SHEET_DETAIL" | wc -l)" -ge 3 ]] || fail "答题卡并非所有项目都必填"
+if grep -q '@\[strings/' <<<"$SHEET_DETAIL"; then fail "答题卡详情页存在未替换的字符串标签"; fi
+if grep -q 'style=' <<<"$SHEET_DETAIL"; then fail "答题卡详情页存在行内样式（HTML/CSS 未解耦）"; fi
+
+SHEET_UPLOAD_PAGE="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submission/$SHEET/upload")"
+grep -q 'data-answer-sheet="1"' <<<"$SHEET_UPLOAD_PAGE" || fail "答题卡上传页缺少自动批改标记"
+if grep -q 'id="upload-form"' <<<"$SHEET_UPLOAD_PAGE"; then fail "答题卡模式仍渲染了默认上传表单"; fi
+
+# 所有项目必填（服务端校验）
+PARTIAL="$(jq -nc '{form_q1:"2"}')"
+PARTIAL_BODY="$(jq -nc --arg a "$STUDENT" --arg w "$SHEET" --arg d "$PARTIAL" \
+  '{auth:$a,which:$w,title:"bot-upload",desc:$d}')"
+assert_eq "$(http_code /api/upload "$PARTIAL_BODY")" "400" "答题卡未全部作答"
+
+# 前端自动批改：正误与分数追加在提交内容末尾（__grade）
+FULL_ANSWER="$(jq -nc '{form_q1:"2",form_q2:"b",form_q3:"on",
+  __grade:{score:10,full:10,right:3,count:3,detail:{
+    form_q1:{ok:true,score:5,answer:"2"},
+    form_q2:{ok:true,score:3,answer:"b"},
+    form_q3:{ok:true,score:2,answer:"on"}}}}')"
+FULL_BODY="$(jq -nc --arg a "$STUDENT" --arg w "$SHEET" --arg d "$FULL_ANSWER" \
+  '{auth:$a,which:$w,title:"bot-upload",desc:$d}')"
+SHEET_UP_JSON="$(post /api/upload "$FULL_BODY")"
+assert_jq "$SHEET_UP_JSON" '.ok == true and (.id | startswith("up_"))' "答题卡 bot 提交"
+SHEET_UP="$(echo "$SHEET_UP_JSON" | jq -r .id)"
+SHEET_DL="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SHEET\",\"match_mode\":\"All\"}")"
+echo "$SHEET_DL" | jq -e '.datas[0].desc | fromjson | .__grade.score == 10 and .__grade.full == 10' >/dev/null \
+  || fail "答题卡批改结果未追加在提交内容末尾"
+
+SHEET_ANSWER_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$SHEET_UP/")"
+grep -q '自动批改结果' <<<"$SHEET_ANSWER_HTML" || fail "答题卡提交详情未显示批改结果"
+grep -q '10 / 10' <<<"$SHEET_ANSWER_HTML" || fail "答题卡提交详情未显示得分"
+grep -q '正确 3 / 3' <<<"$SHEET_ANSWER_HTML" || fail "答题卡提交详情未显示正误统计"
+if grep -q '@\[strings/' <<<"$SHEET_ANSWER_HTML"; then fail "答题卡提交详情存在未替换的字符串标签"; fi
+curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/submission/$SHEET/all" | grep -q '10 / 10' \
+  || fail "答题卡提交列表未显示得分"
+assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SHEET\"}")" '.ok == true' "删除答题卡征集"
+
 echo "==> 账号入口与角色身份隔离"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/user")" "303" "未登录访问账号中心"
 assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' "$BASE/user")" "$BASE/login/account" "未登录账号中心跳转登录页"

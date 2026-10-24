@@ -174,7 +174,17 @@ impl SubmissionRow {
 
     /// 问卷模式：简介中可包含表单控件，提交时自动组装 JSON 答案。
     pub fn is_survey(&self) -> bool {
-        self.kind.trim().eq_ignore_ascii_case("survey")
+        crate::survey::kind_mode(&self.kind) == Some(crate::survey::Mode::Survey)
+    }
+
+    /// 答题卡模式：问卷的派生模式，所有题目必填，提交时由前端自动批改。
+    pub fn is_answer_sheet(&self) -> bool {
+        crate::survey::kind_mode(&self.kind) == Some(crate::survey::Mode::AnswerSheet)
+    }
+
+    /// 是否为「简介里写表单」的征集（问卷 / 答题卡）。
+    pub fn is_form(&self) -> bool {
+        crate::survey::kind_mode(&self.kind).is_some()
     }
 
     /// 公示版在截止时间前置顶；未设置截止时间的公示长期有效。

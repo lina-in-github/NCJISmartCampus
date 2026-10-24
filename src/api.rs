@@ -62,11 +62,10 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
             if kind.trim().eq_ignore_ascii_case("notice") {
                 return api_forbidden("uploads are disabled for notice submissions");
             }
-            // 问卷模式：简介里的必填控件在服务端再校验一次（answer 为 JSON 对象时）。
-            if kind.trim().eq_ignore_ascii_case("survey") {
-                if let Some(err) = crate::survey::validate_answer(&form_desc, &desc) {
-                    return api_bad(err);
-                }
+            // 问卷 / 答题卡：简介里的必填项在服务端再校验一次（answer 为 JSON 对象时）。
+            // 答题卡模式下所有题目都必填。
+            if let Some(err) = crate::survey::validate_submission(&kind, &form_desc, &desc) {
+                return api_bad(err);
             }
         }
         Some(_) => return api_not_found("submission does not belong to the current class"),
@@ -266,6 +265,10 @@ pub async fn new_submission(
         Ok(d) => d,
         Err(e) => return api_bad(e),
     };
+    // 答题卡：简介里必须至少有一道带 id / data-answer / data-score 的题目。
+    if let Some(err) = crate::survey::validate_definition(&kind, &desc) {
+        return api_bad(err);
+    }
     let db = st.db.lock().unwrap();
     match db::insert_submission(&db, &auth, &name, &desc, &kind, deadline) {
         Ok(id) => api_ok(json!({ "ok": true, "id": id })),
