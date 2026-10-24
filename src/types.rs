@@ -172,6 +172,11 @@ impl SubmissionRow {
         self.kind.trim().eq_ignore_ascii_case("notice")
     }
 
+    /// 问卷模式：简介中可包含表单控件，提交时自动组装 JSON 答案。
+    pub fn is_survey(&self) -> bool {
+        self.kind.trim().eq_ignore_ascii_case("survey")
+    }
+
     /// 公示版在截止时间前置顶；未设置截止时间的公示长期有效。
     pub fn is_pinned_notice(&self, now: i64) -> bool {
         self.is_notice() && self.deadline.map_or(true, |deadline| deadline > now)

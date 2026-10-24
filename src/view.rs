@@ -210,6 +210,7 @@ fn type_label(kind: &str) -> String {
             crate::strings::t("type_leave_request")
         }
         "notice" => crate::strings::t("type_notice"),
+        "survey" => crate::strings::t("type_survey"),
         "other" => crate::strings::t("type_other"),
         "" => crate::strings::t("type_generic"),
         other => truncate_chars(other, 14),
@@ -1569,6 +1570,84 @@ pub fn uploads(
     layout(ctx, &body)
 }
 
+// ---------------------------------------------------------------------------
+// 问卷模式
+// ---------------------------------------------------------------------------
+
+/// 问卷表单：简介被渲染成可填写的控件，末尾统一由 bot 提交（`title=bot-upload`）。
+fn survey_form_html(sub: &SubmissionRow, cancel_link: &str, hint: &str) -> String {
+    let survey = crate::survey::Survey::parse(&sub.desc);
+    if survey.is_empty() {
+        // 简介里没有任何控件：只展示文字，并提示没有可填写的题目。
+        let desc = if sub.desc.trim().is_empty() {
+            r#"<p class="desc-text">@[strings/submission_all_no_desc]</p>"#.to_string()
+        } else {
+            format!(r#"<p class="desc-text">{}</p>"#, esc(&sub.desc))
+        };
+        return format!(r#"{desc}<p class="survey-hint">@[strings/survey_no_fields]</p>"#);
+    }
+    let body = survey.to_html();
+    let cancel = if cancel_link.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<a class="btn ghost" href="{}">@[strings/common_cancel]</a>"#,
+            esc(cancel_link)
+        )
+    };
+    let hint = if hint.trim().is_empty() {
+        String::new()
+    } else {
+        format!(r#"<span class="hint">{}</span>"#, esc(hint))
+    };
+    format!(
+        r#"<form class="survey-form" id="survey-form" data-survey-form data-submission="{id}">{body}
+<div class="form-actions"><button class="btn primary" type="submit" id="survey-submit" data-survey-submit>{send}@[strings/survey_submit]</button>{cancel}<span class="spacer"></span>{hint}</div></form>"#,
+        id = esc(&sub.id),
+        body = body,
+        send = icon("send"),
+        cancel = cancel,
+        hint = hint
+    )
+}
+
+/// 提交详情的正文：问卷回答（JSON）渲染成键值列表，其他情况保持纯文本。
+fn upload_content_html(sub: &SubmissionRow, upload: &UploadRow) -> String {
+    if upload.desc.trim().is_empty() {
+        return r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string();
+    }
+    if sub.is_survey() {
+        if let Some(rows) = crate::survey::answer_rows(&sub.desc, &upload.desc) {
+            let rows: String = rows
+                .into_iter()
+                .map(|(label, value)| {
+                    let shown = if value.trim().is_empty() {
+                        "@[strings/survey_answer_empty]".to_string()
+                    } else {
+                        esc(&switch_text(&value))
+                    };
+                    format!(
+                        r#"<div class="kv"><dt>{}</dt><dd>{}</dd></div>"#,
+                        esc(&label),
+                        shown
+                    )
+                })
+                .collect();
+            return format!(r#"<div class="stack">{rows}</div>"#);
+        }
+    }
+    format!(r#"<p class="desc-text">{}</p>"#, esc(&upload.desc))
+}
+
+/// 问卷开关的答案用本地化文案展示（存储值仍是 `on` / `off`）。
+fn switch_text(value: &str) -> String {
+    match value.trim() {
+        "on" => crate::strings::t("survey_switch_on"),
+        "off" => crate::strings::t("survey_switch_off"),
+        _ => value.to_string(),
+    }
+}
+
 pub fn submission_all(
     ctx: &LayoutCtx,
     sub: &SubmissionRow,
@@ -1601,11 +1680,17 @@ pub fn submission_all(
         String::new()
     };
     let upload_btn = if can_upload {
+        let label = if sub.is_survey() {
+            "@[strings/survey_fill]"
+        } else {
+            "@[strings/page_upload]"
+        };
         format!(
-            r#"<a class="btn primary" href="{base}submission/{id}/upload">{upload}@[strings/page_upload]</a>"#,
+            r#"<a class="btn primary" href="{base}submission/{id}/upload">{upload}{label}</a>"#,
             base = base,
             id = esc(&sub.id),
-            upload = icon("upload")
+            upload = icon("upload"),
+            label = label
         )
     } else {
         String::new()
@@ -1650,10 +1735,16 @@ pub fn submission_all(
         delete = delete,
         type_label = esc(&type_label(&sub.kind)),
         deadline = deadline_badge(sub.deadline, now),
-        desc = if sub.desc.trim().is_empty() {
-            "@[strings/submission_all_no_desc]".to_string()
+        desc = if sub.is_survey() {
+            survey_form_html(
+                sub,
+                &format!("{base}submissions/"),
+                "@[strings/survey_all_hint]",
+            )
+        } else if sub.desc.trim().is_empty() {
+            r#"<p class="desc-text">@[strings/submission_all_no_desc]</p>"#.to_string()
         } else {
-            esc(&sub.desc)
+            format!(r#"<p class="desc-text">{}</p>"#, esc(&sub.desc))
         },
         file_icon = icon("file"),
         count_label = if staff {
@@ -1744,6 +1835,9 @@ pub fn upload_form(
     existing: i64,
     last_id: Option<&str>,
 ) -> String {
+    if sub.is_survey() {
+        return survey_upload_page(ctx, sub, existing, last_id);
+    }
     let now = crate::tools::now_ts();
     let base = ctx.base();
     let default_title = truncate_chars(&format!("{} · {}", ctx.display_name, sub.name), 160);
@@ -1794,6 +1888,59 @@ pub fn upload_form(
             .deadline
             .map(fmt_datetime)
             .unwrap_or_else(|| "@[strings/time_no_deadline]".to_string())
+    );
+    layout(ctx, &body)
+}
+
+/// 问卷模式的上传页：关闭默认上传表单，改为填写简介里的控件。
+fn survey_upload_page(
+    ctx: &LayoutCtx,
+    sub: &SubmissionRow,
+    existing: i64,
+    last_id: Option<&str>,
+) -> String {
+    let now = crate::tools::now_ts();
+    let base = ctx.base();
+    let parent = ctx.page_role == "parent";
+    let existing_hint = if existing > 0 {
+        if parent {
+            crate::strings::f1("upload_form_existing_parent", existing)
+        } else {
+            crate::strings::f1("upload_form_existing", existing)
+        }
+    } else if parent {
+        crate::strings::t("upload_form_first_parent")
+    } else {
+        crate::strings::t("upload_form_first")
+    };
+    let last_link = last_id
+        .map(|id| {
+            format!(
+                r#" <a href="{base}upload/{id}/">@[strings/upload_form_last_link]</a>"#,
+                base = base,
+                id = esc(id)
+            )
+        })
+        .unwrap_or_default();
+    let body = format!(
+        include_str!("./views/survey_form.html"),
+        base = base,
+        arrow = icon("arrow-left"),
+        id = esc(&sub.id),
+        name = esc(&sub.name),
+        page_title = esc(&crate::strings::f1("survey_form_page_title", &sub.name)),
+        form = survey_form_html(sub, &format!("{base}submission/{}/all", sub.id), ""),
+        folder = icon("folder"),
+        type_label = esc(&type_label(&sub.kind)),
+        deadline = deadline_badge(sub.deadline, now),
+        created_name = esc(&sub.created_name),
+        created = esc(&fmt_datetime(sub.created_at)),
+        deadline_text = sub
+            .deadline
+            .map(fmt_datetime)
+            .unwrap_or_else(|| "@[strings/time_no_deadline]".to_string()),
+        existing_hint = esc(&existing_hint),
+        last_link = last_link
     );
     layout(ctx, &body)
 }
@@ -1976,11 +2123,7 @@ pub fn upload_detail(
         folder = icon("folder"),
         paperclip = icon("paperclip"),
         time = esc(&relative_time(upload.created_at, now)),
-        desc = if upload.desc.trim().is_empty() {
-            r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string()
-        } else {
-            format!(r#"<p class="desc-text">{}</p>"#, esc(&upload.desc))
-        },
+        desc = upload_content_html(sub, upload),
         gallery = attachment_gallery(&upload.data),
         reply = icon("reply"),
         reply_count = replies.len(),

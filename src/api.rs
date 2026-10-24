@@ -57,10 +57,16 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
     };
 
     let db = st.db.lock().unwrap();
-    match db::submission_class_and_kind(&db, &req.which) {
-        Some((class_id, kind)) if class_id == auth.class_id => {
+    match db::submission_meta(&db, &req.which) {
+        Some((class_id, kind, form_desc)) if class_id == auth.class_id => {
             if kind.trim().eq_ignore_ascii_case("notice") {
                 return api_forbidden("uploads are disabled for notice submissions");
+            }
+            // 问卷模式：简介里的必填控件在服务端再校验一次（answer 为 JSON 对象时）。
+            if kind.trim().eq_ignore_ascii_case("survey") {
+                if let Some(err) = crate::survey::validate_answer(&form_desc, &desc) {
+                    return api_bad(err);
+                }
             }
         }
         Some(_) => return api_not_found("submission does not belong to the current class"),

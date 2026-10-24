@@ -659,6 +659,82 @@
   }
 
   // ---------------------------------------------------------------------
+  // 问卷：简介里的控件 -> JSON -> bot 提交（title=bot-upload）
+  // ---------------------------------------------------------------------
+
+  function surveyValues(form) {
+    var groups = {};
+    $$("[data-survey-kind]", form).forEach(function (el) {
+      var key = el.getAttribute("data-survey-id") || el.id;
+      if (!key) return;
+      (groups[key] = groups[key] || []).push(el);
+    });
+    var out = {};
+    Object.keys(groups).forEach(function (key) {
+      var list = groups[key];
+      var kind = list[0].getAttribute("data-survey-kind");
+      if (kind === "switch") {
+        out[key] = list[0].checked ? "on" : "off";
+      } else if (kind === "checkbox") {
+        out[key] = list
+          .filter(function (el) {
+            return el.checked;
+          })
+          .map(function (el) {
+            return el.value || "on";
+          })
+          .join(",");
+      } else {
+        out[key] = (list[0].value || "").trim();
+      }
+    });
+    return out;
+  }
+
+  $$("form[data-survey-form]").forEach(function (form) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = form.querySelector("[data-survey-submit]");
+      var submission = form.getAttribute("data-submission");
+      var values = surveyValues(form);
+      // 多选组无法用原生 required 约束，这里补齐必填校验。
+      var missing = null;
+      $$("[data-survey-required]", form).forEach(function (el) {
+        if (missing) return;
+        var key = el.getAttribute("data-survey-id");
+        if (!values[key]) missing = el;
+      });
+      if (missing) {
+        toast(S("toast_survey_required"), "error");
+        missing.focus();
+        return;
+      }
+      if (!submission) {
+        toast(S("toast_missing_submission"), "error");
+        return;
+      }
+      setLoading(btn, true, S("toast_submitting"));
+      try {
+        var r = await api("/api/upload", {
+          auth: SC.auth,
+          which: submission,
+          title: "bot-upload",
+          desc: JSON.stringify(values),
+          data: []
+        });
+        toast(S("toast_survey_submitted"), "ok");
+        setTimeout(function () {
+          location.href =
+            SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent(S("toast_survey_submitted"));
+        }, 300);
+      } catch (err) {
+        setLoading(btn, false);
+        toast(err.message, "error");
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
   // 回复
   // ---------------------------------------------------------------------
 

@@ -143,6 +143,62 @@ assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE
 curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的登录身份" || fail "登录页缺少身份选择"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
+echo "==> 问卷模式"
+SURVEY_DESC='姓名：<input id="form_name" required/>
+想参加的社团：<checkbox id="form_club" value="math"/>数学社 <checkbox id="form_club" value="art"/>美术社
+接收通知：<switch id="form_notify"/>'
+SURVEY_BODY="$(jq -nc --arg a "$TEACHER" --arg n "问卷征集" --arg d "$SURVEY_DESC" \
+  '{auth:$a,name:$n,desc:$d,type:"survey"}')"
+SURVEY_JSON="$(post /api/new-submission "$SURVEY_BODY")"
+assert_jq "$SURVEY_JSON" '.ok == true and (.id | startswith("sub_"))' "发布问卷征集"
+SURVEY="$(echo "$SURVEY_JSON" | jq -r .id)"
+
+# 详情页：简介里的控件被渲染成真正的表单 + 末尾提交按钮
+SURVEY_DETAIL="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submission/$SURVEY/all")"
+grep -q 'data-survey-form' <<<"$SURVEY_DETAIL" || fail "问卷详情页缺少问卷表单"
+grep -q 'id="form_name"' <<<"$SURVEY_DETAIL" || fail "问卷详情页未渲染 input 控件"
+grep -q 'data-survey-kind="switch"' <<<"$SURVEY_DETAIL" || fail "问卷详情页未渲染 switch 控件"
+grep -q 'data-survey-submit' <<<"$SURVEY_DETAIL" || fail "问卷详情页缺少提交按钮"
+if grep -q '&lt;input id=&quot;form_name&quot;' <<<"$SURVEY_DETAIL"; then
+  fail "问卷控件的标签被当成纯文本转义输出了"
+fi
+if grep -q '@\[strings/' <<<"$SURVEY_DETAIL"; then fail "问卷详情页存在未替换的字符串标签"; fi
+if grep -q 'style=' <<<"$SURVEY_DETAIL"; then fail "问卷详情页存在行内样式（HTML/CSS 未解耦）"; fi
+
+# 上传页：关闭默认上传表单，改为问卷
+SURVEY_UPLOAD_PAGE="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submission/$SURVEY/upload")"
+grep -q 'data-survey-form' <<<"$SURVEY_UPLOAD_PAGE" || fail "问卷上传页缺少问卷表单"
+if grep -q 'id="upload-form"' <<<"$SURVEY_UPLOAD_PAGE"; then fail "问卷模式仍渲染了默认上传表单"; fi
+if grep -q '@\[strings/' <<<"$SURVEY_UPLOAD_PAGE"; then fail "问卷上传页存在未替换的字符串标签"; fi
+
+# API：必填项缺失被拒绝，填写完整后按 bot-upload 保存
+BAD_ANSWER="$(jq -nc '{form_notify:"on"}')"
+BAD_BODY="$(jq -nc --arg a "$STUDENT" --arg w "$SURVEY" --arg d "$BAD_ANSWER" \
+  '{auth:$a,which:$w,title:"bot-upload",desc:$d}')"
+assert_eq "$(http_code /api/upload "$BAD_BODY")" "400" "问卷缺少必填项"
+
+ANSWER="$(jq -nc '{form_name:"小明",form_club:"math,art",form_notify:"on"}')"
+GOOD_BODY="$(jq -nc --arg a "$STUDENT" --arg w "$SURVEY" --arg d "$ANSWER" \
+  '{auth:$a,which:$w,title:"bot-upload",desc:$d}')"
+SURVEY_UP_JSON="$(post /api/upload "$GOOD_BODY")"
+assert_jq "$SURVEY_UP_JSON" '.ok == true and (.id | startswith("up_"))' "问卷 bot 提交"
+SURVEY_UP="$(echo "$SURVEY_UP_JSON" | jq -r .id)"
+SURVEY_DL="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SURVEY\",\"match_mode\":\"All\"}")"
+echo "$SURVEY_DL" | jq -e --arg ans "$ANSWER" \
+  '.datas[0].title == "bot-upload" and .datas[0].desc == $ans' >/dev/null \
+  || fail "问卷答案经 API 下载"
+
+# 提交详情：JSON 答案渲染成可读的键值（题目取自简介）
+SURVEY_ANSWER_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$SURVEY_UP/")"
+grep -q '小明' <<<"$SURVEY_ANSWER_HTML" || fail "问卷提交详情未显示答案"
+grep -q '姓名' <<<"$SURVEY_ANSWER_HTML" || fail "问卷提交详情未显示题目标签"
+if grep -q '@\[strings/' <<<"$SURVEY_ANSWER_HTML"; then fail "问卷提交详情存在未替换的字符串标签"; fi
+
+# 仍允许 API 提交非 JSON 说明文本
+assert_jq "$(post /api/upload "{\"auth\":\"$STUDENT\",\"which\":\"$SURVEY\",\"title\":\"plain\",\"desc\":\"随便写点说明\"}")" \
+  '.ok == true' "问卷仍允许 API 直接提交"
+assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SURVEY\"}")" '.ok == true' "删除问卷征集"
+
 echo "==> 账号入口与角色身份隔离"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/user")" "303" "未登录访问账号中心"
 assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' "$BASE/user")" "$BASE/login/account" "未登录账号中心跳转登录页"

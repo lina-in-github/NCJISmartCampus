@@ -50,6 +50,7 @@ name=common_key_only_visible lines=0 content=密钥只对你可见
 name=type_homework lines=0 content=作业
 name=type_open_call lines=0 content=公开征集
 name=type_leave_request lines=0 content=请假申请
+name=type_survey lines=0 content=问卷
 name=type_notice lines=0 content=通知
 name=type_other lines=0 content=其他
 name=type_generic lines=0 content=征集
@@ -194,6 +195,7 @@ name=new_tip1 lines=0 content=1. 名称尽量具体，包含学科、主题或�
 name=new_tip2 lines=0 content=2. 截止时间按北京时间显示，学生端会实时提示剩余时间。
 name=new_tip3 lines=0 content=3. 学生可多次上传；老师可以在提交详情中逐条回复。
 name=new_tip4 lines=0 content=4. 发布后管理员可以删除该征集，请确认内容无误。
+name=new_tip_survey lines=0 content=5. 类型选「问卷」时，简介里可用 &lt;input id=&quot;form_x&quot; required/&gt;、&lt;checkbox id=&quot;form_y&quot; value=&quot;选项&quot;/&gt;、&lt;switch id=&quot;form_z&quot;/&gt; 定义题目，id 必须以 form_ 开头。
 name=new_current_class lines=0 content=当前班级
 name=new_publish_identity lines=0 content=发布身份
 name=new_data_scope lines=0 content=数据范围
@@ -283,6 +285,17 @@ name=upload_form_first lines=0 content=这是你在本征集的第一次提交�
 name=upload_form_first_parent lines=0 content=这是孩子在本次征集的第一次提交。
 name=upload_form_last_link lines=0 content=查看上一次提交
 name=upload_form_tip lines=0 content=提示：截止后仍可补交，老师会看到每次提交的时间。
+name=survey_form_page_title lines=0 content=填写问卷「{}」
+name=survey_form_subtitle lines=0 content=按简介中的题目填写，提交后由系统自动整理答案。
+name=survey_submit lines=0 content=提交问卷
+name=survey_fill lines=0 content=填写问卷
+name=survey_back_detail lines=0 content=返回问卷详情
+name=survey_all_hint lines=0 content=提交后会出现在下方列表中，可查看老师的回复。
+name=survey_no_fields lines=0 content=这份问卷暂时没有可填写的题目。
+name=survey_answer_empty lines=0 content=未填写
+name=survey_switch_on lines=0 content=开
+name=survey_switch_off lines=0 content=关
+name=survey_tip lines=0 content=提示：问卷可以重复提交；每次提交都会单独保存，老师能看到全部回答。
 name=account_back_login lines=0 content=返回角色登录
 name=account_login_desc lines=0 content=使用用户名与密码登录，管理你绑定的班级身份与个人偏好。
 name=account_username lines=0 content=用户名
@@ -387,6 +400,8 @@ name=toast_upload_title_required lines=0 content=请填写上传标题
 name=toast_missing_submission lines=0 content=缺少征集信息
 name=toast_submitting lines=0 content=提交中…
 name=toast_uploaded lines=0 content=上传成功
+name=toast_survey_submitted lines=0 content=问卷已提交
+name=toast_survey_required lines=0 content=请填写必填项
 name=toast_submission_name_required lines=0 content=请填写征集名称
 name=toast_publishing lines=0 content=发布中…
 name=toast_submission_published lines=0 content=征集已发布

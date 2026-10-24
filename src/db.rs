@@ -394,11 +394,13 @@ pub fn submission_class_id(db: &Connection, id: &str) -> Option<String> {
     .flatten()
 }
 
-pub fn submission_class_and_kind(db: &Connection, id: &str) -> Option<(String, String)> {
+/// 上传前需要确认的征集信息：`(class_id, type, desc)`。
+/// 问卷模式要靠 `desc` 解析必填控件，因此一并取出。
+pub fn submission_meta(db: &Connection, id: &str) -> Option<(String, String, String)> {
     db.query_row(
-        "SELECT class_id, type FROM submissions WHERE id = ?1",
+        "SELECT class_id, type, desc FROM submissions WHERE id = ?1",
         params![id],
-        |r| Ok((r.get(0)?, r.get(1)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )
     .optional()
     .ok()

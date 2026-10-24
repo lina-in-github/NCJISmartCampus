@@ -169,3 +169,14 @@ name=admin_slogan lines=2 content=
 在服务器启动时读取strings项目，如有变化同步到strings.db。
 自动替换形如@[strings/title]的标签。
 strings应当可作为{}格式化的参数
+---
+新增征集模式：问卷
+在该模式下，允许详情页简介中<input/><checkbox/><switch/>渲染（必须携带id字段，可选携带required字段，id必须以“form_”开头）。
+关闭前端默认提交;在末尾新增提交按钮，填写完毕后按照：
+title:bot-upload
+content:
+{
+    id:"form_input_or_checkbox":"value"
+    id:"form_switch":"on/off"
+}
+的形式自动bot提交;仍允许api提交

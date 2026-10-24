@@ -276,6 +276,36 @@ body {
 .grow { flex: 1; min-width: 0; }
 .inline-form { display: inline-flex; }
 
+/* ---------- 问卷控件 ---------- */
+
+.survey-form { display: flex; flex-direction: column; }
+.survey-body { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.survey-text {
+  color: var(--text-2); font-size: 13.5px; line-height: 1.75; overflow-wrap: anywhere;
+}
+.survey-hint { color: var(--muted); font-size: 13px; }
+.survey-field { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
+.survey-choice {
+  display: inline-flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%;
+  color: var(--text-2); font-size: 13.5px; cursor: pointer;
+}
+.survey-check { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.survey-choice-text { min-width: 0; overflow-wrap: anywhere; }
+.survey-choice-text .req, .survey-field .req { color: var(--danger); }
+.switch { position: relative; display: inline-flex; flex: none; width: 40px; height: 22px; }
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.switch-track {
+  position: relative; display: block; width: 40px; height: 22px; border-radius: 999px;
+  border: 1px solid var(--line-strong); background: var(--surface-2);
+}
+.switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--muted);
+}
+.switch input:checked + .switch-track { border-color: var(--accent); background: var(--accent); }
+.switch input:checked + .switch-track::after { left: auto; right: 2px; background: var(--on-accent); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* ---------- 上传 ---------- */
 
 .dropzone {

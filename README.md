@@ -6,8 +6,8 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.2** — UI 文案集中到 `strings/zh-CN.txt`，API 文案改为英文；角色身份与账号会话完全隔离
-- 历史版本：v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
+- 当前版本：**v0.1.4** — 新增征集模式「问卷」：简介中的 `<input/>` / `<checkbox/>` / `<switch/>` 渲染为表单，前端自动 bot 提交 JSON 答案
+- 历史版本：v0.1.2 UI 文案集中到 `strings/zh-CN.txt`、API 文案改为英文、角色身份与账号会话隔离；v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
 
@@ -77,8 +77,8 @@ SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 | `…/submissions/new` | 发布征集（老师/管理员） |
 | `…/uploads/` | 学生：自己的提交；老师/管理员：全班提交，可筛选待回复/已回复 |
 | `…/submission/<id>/` | 有提交则跳转最后一条本站提交，否则跳上传表单；公示版（notice）跳转详情页 |
-| `…/submission/<id>/upload` | 上传表单（支持多附件、拖拽、预览）；公示版禁用并跳转详情页 |
-| `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班）；公示版仅渲染详情 |
+| `…/submission/<id>/upload` | 上传表单（支持多附件、拖拽、预览）；公示版禁用并跳转详情页；问卷版改为填写简介里的题目 |
+| `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班）；公示版仅渲染详情；问卷版渲染可填写的问卷 |
 | `…/upload/<id>/` | 提交详情：附件预览、回复列表、重新上传、管理员删除 |
 | `/user` | 账号中心：偏好设置、密码、绑定/删除身份、创建班级、生成成员密钥；未登录 → `/login/account` |
 | `/logout` | POST，退出登录 |
@@ -243,6 +243,34 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
   # 期望：无输出
   ```
 
+### 4.9 问卷模式（v0.1.4）
+
+征集类型为 `survey`（「问卷」）时，简介不再是纯文本，而是问卷定义：
+
+```text
+姓名：<input id="form_name" required/>
+
+想参加的社团：<checkbox id="form_club" value="math"/>数学社 <checkbox id="form_club" value="art"/>美术社
+接收通知：<switch id="form_notify"/>
+备注：<input id="form_note" placeholder="写点什么"/>
+```
+
+- 允许的标签只有 `input`、`checkbox`、`switch`；**`id` 必填且必须以 `form_` 开头**，`required` 可选；
+  `input` 还支持 `type`（`text`/`number`/`email`/`tel`/`url`/`date`/`time`）、`placeholder`、`value`，
+  `checkbox` 支持 `value`（选项值）。不合法或未知标签会按普通文本转义显示，简介作者无法注入任意 HTML。
+- 题目标签自动从简介文字推断：`input` 取前文（「姓名：」→「姓名」），`checkbox` / `switch` 取后文
+  （「`<checkbox/>`数学社」→「数学社」），多选组的组标题取组前文本。
+- 同一 `id` 的多个 `checkbox` 视为多选组（DOM id 依次为 `form_x`、`form_x__2`…，答案键仍是 `form_x`）。
+- **关闭前端默认提交**：问卷模式下不再显示标题/说明/附件表单，简介被渲染成可填写控件，
+  末尾是一个「提交问卷」按钮；`/submission/<id>/all` 详情页同样可以就地填写。
+- 提交按钮把答案打包成 `{控件 id: 值}` 的 JSON 字符串，以 `title: "bot-upload"` 调用 `/api/upload`
+  （`desc` 即该 JSON），随后跳转到提交详情页查看老师的回复。
+- 答案的值约定：`input` → 输入内容；`switch` → `on` / `off`；`checkbox` → 勾选时为 `value`（缺省 `on`），
+  未勾选为空字符串，多选组以 `,` 连接。服务端在 `desc` 可解析为 JSON 对象时校验 `required` 控件，
+  缺少必填项返回 `400`；非 JSON 的说明文本仍可直接通过 API 提交（「仍允许 API 提交」）。
+- 提交详情页会把 JSON 答案按简介顺序渲染成「题目 / 回答」列表（多选组显示选项文字、开关显示本地化的开/关），
+  `/api/download` 返回的 `desc` 仍是原始 JSON 字符串，方便导出统计。
+
 ---
 
 ## 5. 界面
@@ -252,6 +280,7 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 - **征集**：卡片式列表、类型与截止状态标签、发布表单。
 - **提交**：拖拽上传、多个附件、图片缩略图、base64 编码由浏览器完成。
 - **详情**：图片灯箱、附件下载、回复时间线、快捷回复、管理员删除。
+- **问卷**：简介中的输入框 / 复选框 / 开关渲染为扁平控件（开关为自绘滑块），末尾一键提交，答案自动整理成键值列表。
 - **账号中心**：深/浅/跟随系统主题、默认视图、显示名称、密码、多身份密钥（显示/复制/改名/进入/删除）、创建班级、生成成员密钥。
 - 断点：>1120px 侧边栏电脑版；≤920px 顶栏 + 底部导航手机版；≤640px 单列紧凑布局。
 - 主题会记住到 `localStorage`；未登录页也支持系统深色模式。
@@ -269,11 +298,13 @@ API 不使用该字符串库：API 的错误与成功消息统一为英文。
 ## 6. 测试
 
 ```bash
-cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解析同步/数据库种子等单元测试
+cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析与校验/字符串解析同步/数据库种子等单元测试
 ./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3）
 ```
 
 `scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、页面无行内样式、CSS 使用 `#0010ff` / `#ff0000` / `#eedd00`、登录、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、账号与角色会话隔离、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
+
+问卷模式在冒烟测试中覆盖：发布问卷、详情页/上传页渲染控件、必填项缺失返回 400、`bot-upload` 答案经 `/api/download` 原样返回、提交详情按题目展示答案、仍允许非 JSON 说明的 API 提交。
 
 ---
 
@@ -293,12 +324,14 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解�
     ├── main.rs             # 路由与启动
     ├── schema.sql          # SQLite DDL（由 db.rs 加载）
     ├── strings.rs          # 字符串解析、strings.db 同步、标签/格式化
+    ├── survey.rs           # 问卷：简介控件解析、渲染、必填校验、答案整理
     ├── db.rs               # 唯一业务 SQL/事务/连接层、建班/成员、演示数据
     ├── types.rs            # 状态、模型、请求/表单
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
     ├── api.rs              # /api/* 处理（只调用 db::*，英文消息）
     ├── pages.rs            # 页面路由、账号中心动作（只调用 db::*）
     ├── view.rs             # 服务端 HTML 渲染（@[strings/key] 标签）
+    ├── views/             # 页面片段模板（format! 占位符）
     └── assets/
         ├── app.css         # 重置 / 主题变量 / 双端适配 / 扁平控件样式
         └── app.js          # 上传、回复、删除、主题等交互（无行内样式）
@@ -338,6 +371,10 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解�
 | v0.1.2 API 使用英文 | ✅ API 字段/错误/消息为英文 |
 | v0.1.2 自动替换 `@[strings/key]` 标签 | ✅ HTML 渲染后统一替换 |
 | v0.1.2 字符串支持 `{}` 格式化 | ✅ Rust `t/f1/f2` + JS `S()` |
+| 新增征集模式「问卷」：简介中渲染 `input`/`checkbox`/`switch` | ✅ `src/survey.rs`，id 必须 `form_` 开头、支持 `required` |
+| 问卷：关闭前端默认提交，末尾新增提交按钮 | ✅ 上传页/详情页改为问卷表单，末尾「提交问卷」 |
+| 问卷：按 `title=bot-upload` + `desc={id:value}` 自动 bot 提交 | ✅ `app.js` 收集 `{id: value}` 后调用 `/api/upload` |
+| 问卷：仍允许 API 提交 | ✅ `/api/upload` 不限制标题与格式，仅对 JSON 答案校验必填项 |
 | 角色登录不反查 user；未登录账号中心跳登录页 | ✅ `sc_sid` / `sc_uid` 分离，`/user` → `/login/account` |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 

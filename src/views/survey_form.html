@@ -1,0 +1,30 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submission/{id}/all">{arrow}@[strings/survey_back_detail]</a>
+    <h2 class="page-title">{page_title}</h2>
+    <p class="page-sub">@[strings/survey_form_subtitle]</p>
+  </div>
+</div>
+<div class="detail-grid">
+  <div class="form-card">{form}</div>
+  <aside class="stack">
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{folder}@[strings/upload_form_submission_info]</h3></div>
+      <div class="panel-body">
+        <div class="stack">
+          <div><span class="chip type">{type_label}</span> {deadline}</div>
+          <strong class="panel-strong">{name}</strong>
+        </div>
+        <div class="divider"></div>
+        <div class="kv"><dt>@[strings/upload_form_publisher]</dt><dd>{created_name}</dd></div>
+        <div class="kv"><dt>@[strings/upload_form_published_at]</dt><dd>{created}</dd></div>
+        <div class="kv"><dt>@[strings/new_deadline_label]</dt><dd>{deadline_text}</dd></div>
+        <div class="divider"></div>
+        <p class="hint">{existing_hint}{last_link}</p>
+      </div>
+    </div>
+    <div class="account-note">
+      @[strings/survey_tip]
+    </div>
+  </aside>
+</div>

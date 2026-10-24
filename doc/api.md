@@ -91,7 +91,8 @@ Content-Type: application/json
 
 ## 1. `/api/upload`
 
-上传一份提交到指定征集（任意角色）。类型为 `notice` 的公示版禁用提交，会返回 `403`。
+上传一份提交到指定征集（任意角色）。类型为 `notice` 的公示版禁用提交，会返回 `403`；
+类型为 `survey` 的问卷征集会在服务端再校验一次必填题（见 [1.1 问卷模式](#11-问卷模式survey)）。
 
 ### 请求
 
@@ -140,6 +141,56 @@ curl -s http://localhost:3000/api/upload \
 ```
 
 说明：学生始终以自己的身份记录 `studentID` / `shortStudentID`；老师/管理员上传时这两项为空/0。截止后仍允许补交。
+
+### 1.1 问卷模式（`survey`）
+
+征集类型为 `survey` 时，简介（`desc`）里可以用 `<input/>`、`<checkbox/>`、`<switch/>` 定义题目，
+页面会把它渲染成可填写的表单，并在末尾提供提交按钮。提交仍然走 `/api/upload`，
+只是按固定约定打包：
+
+```json
+{
+  "auth": "SC-STU-DEMO-2026",
+  "which": "sub_xxxxxxxxxxxx",
+  "title": "bot-upload",
+  "desc": "{\"form_name\":\"陈小满\",\"form_club\":\"math,art\",\"form_notify\":\"on\"}",
+  "data": []
+}
+```
+
+- `title` 固定为 `bot-upload`（页面上的自动提交使用该标题，便于筛选）；
+- `desc` 是 `{控件 id: 值}` 的 JSON **字符串**，键与简介里控件的 `id` 一一对应；
+- 值的约定：
+  - `input` → 输入内容（去除首尾空格）；
+  - `switch` → `"on"` / `"off"`；
+  - `checkbox` → 勾选时为其 `value`（缺省 `"on"`），未勾选为空字符串；同一 `id` 出现多次时为多选组，勾选项以 `,` 连接。
+
+必填校验：简介里的控件带 `required` 时，如果 `desc` 能解析成 JSON 对象，缺少必填键（或值为空、`false`）
+会返回 `400`：
+
+```json
+{ "ok": false, "msg": "missing required survey fields: form_name" }
+```
+
+不是 JSON 对象的 `desc`（普通文字说明）不会被拦截，因此「仍允许 API 直接提交」的约定依然成立。
+
+```bash
+# 老师发布问卷：简介里写题目
+curl -s $BASE/api/new-submission -H 'Content-Type: application/json' -d '{
+  "auth":"SC-TEA-DEMO-2026",
+  "name":"秋季活动问卷",
+  "type":"survey",
+  "desc":"姓名：<input id=\"form_name\" required/>\n想参加的社团：<checkbox id=\"form_club\" value=\"math\"/>数学社 <checkbox id=\"form_club\" value=\"art\"/>美术社\n接收通知：<switch id=\"form_notify\"/>"
+}'
+
+# 学生按 JSON 答案提交
+curl -s $BASE/api/upload -H 'Content-Type: application/json' -d "{
+  \"auth\":\"SC-STU-DEMO-2026\",
+  \"which\":\"$SUB\",
+  \"title\":\"bot-upload\",
+  \"desc\":\"{\\\"form_name\\\":\\\"陈小满\\\",\\\"form_club\\\":\\\"math,art\\\",\\\"form_notify\\\":\\\"on\\\"}\"
+}"
+```
 
 ---
 
@@ -232,7 +283,7 @@ curl -s http://localhost:3000/api/upload \
 | `auth` | string | ✅ | 老师/管理员密钥 |
 | `name` | string | ✅ | 征集名称，≤200 字 |
 | `desc` | string | — | 说明，≤2000 字 |
-| `type` | string | — | 例：`homework`、`open call`、`leave request`、`notice`，缺省 `homework` |
+| `type` | string | — | 例：`homework`、`open call`、`leave request`、`survey`（问卷）、`notice`，缺省 `homework` |
 | `deadLine` | string / number / null | — | 截止时间 |
 
 ### 响应
@@ -551,6 +602,8 @@ curl -s $BASE/api/del-object \
   -H 'Content-Type: application/json' \
   -d "{\"auth\":\"SC-ADM-DEMO-2026\",\"id\":\"$SUB\"}"
 ```
+
+问卷征集（`type: "survey"`）的提交见 [1.1 问卷模式](#11-问卷模式survey)。
 
 ---
 

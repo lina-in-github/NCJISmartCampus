@@ -15,6 +15,7 @@ mod api;
 mod db;
 mod pages;
 mod strings;
+mod survey;
 mod tools;
 mod types;
 mod view;
