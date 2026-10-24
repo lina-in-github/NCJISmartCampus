@@ -9,15 +9,7 @@ pub struct AppState {
     pub sessions: Arc<Mutex<HashMap<String, i64>>>,
 }
 
-pub const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS users (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    salt     TEXT NOT NULL,
-    pwhash   TEXT NOT NULL,
-    page     TEXT NOT NULL
-);
-"#;
+pub const SCHEMA: &str = include_str!("./init.sql");
 
 
 
@@ -43,7 +35,6 @@ pub struct SavePage {
     pub source: String,
 }
 
-#[derive(Deserialize)]
 pub struct ChangePw {
     pub old: String,
     pub new: String,

@@ -7,7 +7,7 @@ use axum::{
 use rusqlite::Connection;
 //use sha2::Digest;
 
-use crate::route::{change_password, get_page, index, login, logout, me_page, raw_page, register, save_page};
+use crate::route::{ index, login, logout, me_page, raw_page, register, save_page};
 use crate::types::{AppState, SCHEMA};
 mod types;
 mod tools;
@@ -25,6 +25,7 @@ async fn main() {
         db: Arc::new(Mutex::new(conn)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
     };
+    
 
     let app = Router::new()
         .route("/", get(index))
@@ -33,8 +34,6 @@ async fn main() {
         .route("/logout", post(logout))
         .route("/me", get(me_page))
         .route("/page", get(raw_page))
-        .route("/api/page", get(get_page).post(save_page))
-        .route("/api/password", post(change_password))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("[::]:3000")
