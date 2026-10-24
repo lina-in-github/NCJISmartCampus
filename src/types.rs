@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -15,7 +14,7 @@ pub const ROLE_ADMIN: &str = "admin";
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Arc<Mutex<Connection>>,
+    pub db: Arc<crate::db::Database>,
     /// 角色会话：sc_sid cookie -> session（包含当前 auth）
     pub sessions: Arc<Mutex<HashMap<String, Session>>>,
     /// 账号会话：sc_uid cookie -> user id（用于 /user 账号中心）

@@ -1,3 +1,4 @@
+use std::sync::{LockResult, Mutex, MutexGuard};
 use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -6,7 +7,10 @@ use serde_json::{json, Value};
 use crate::tools::{
     b64_encode, hash_password, new_auth_key, new_class_code, new_id, now_ts, rand_string,
 };
-use crate::types::{AuthCtx, Prefs, UserCtx, ROLE_ADMIN, ROLE_STUDENT, ROLE_TEACHER};
+use crate::types::{
+    AuthCtx, Prefs, ReplyRow, SubmissionRow, UploadRow, UserCtx, ROLE_ADMIN, ROLE_STUDENT,
+    ROLE_TEACHER,
+};
 
 pub const SCHEMA: &str = include_str!("schema.sql");
 
@@ -18,6 +22,23 @@ pub const DEMO_STUDENT3_KEY: &str = "SC-STU-DEMO-2026-03";
 pub const DEMO_ADMIN2_KEY: &str = "SC-ADM-DEMO-2027";
 pub const DEMO_TEACHER2_KEY: &str = "SC-TEA-DEMO-2027";
 pub const DEMO_STUDENT_C2_KEY: &str = "SC-STU-DEMO-2027";
+
+/// 数据库句柄。所有 SQL 都封装在本模块中，其他模块只通过 db 函数访问。
+pub struct Database {
+    conn: Mutex<Connection>,
+}
+
+impl Database {
+    pub fn new(conn: Connection) -> Self {
+        Self {
+            conn: Mutex::new(conn),
+        }
+    }
+
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, Connection>> {
+        self.conn.lock()
+    }
+}
 
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
@@ -356,6 +377,727 @@ pub fn create_members(
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// 征集 / 提交 / 回复查询
+// ---------------------------------------------------------------------------
+
+pub fn submission_class_id(db: &Connection, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT class_id FROM submissions WHERE id = ?1",
+        params![id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+pub fn upload_class_id(db: &Connection, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT class_id FROM uploads WHERE id = ?1",
+        params![id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+pub fn reply_class_id(db: &Connection, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT u.class_id FROM replies r JOIN uploads u ON u.id = r.upload_id WHERE r.id = ?1",
+        params![id],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn map_submission_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<SubmissionRow> {
+    Ok(SubmissionRow {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        desc: r.get(2)?,
+        kind: r.get(3)?,
+        deadline: r.get(4)?,
+        created_at: r.get(5)?,
+        created_name: r.get(6)?,
+        upload_count: r.get(7)?,
+        my_upload_count: r.get(8)?,
+        pending_count: r.get(9)?,
+        last_upload_id: r.get(10)?,
+    })
+}
+
+fn map_upload_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<UploadRow> {
+    let data_raw: String = r.get(5)?;
+    let data = serde_json::from_str::<Value>(&data_raw).unwrap_or(Value::Null);
+    Ok(UploadRow {
+        id: r.get(0)?,
+        submission_id: r.get(1)?,
+        submission_name: r.get(2)?,
+        title: r.get(3)?,
+        desc: r.get(4)?,
+        data,
+        created_at: r.get(6)?,
+        uploader_name: r.get(7)?,
+        student_id: r.get(8)?,
+        short_id: r.get(9)?,
+        role: r.get(10)?,
+        auth_id: r.get(11)?,
+        reply_count: r.get(12)?,
+        last_reply_at: r.get(13)?,
+    })
+}
+
+fn submission_sql(staff: bool, with_limit: bool) -> String {
+    let tail = if with_limit {
+        if staff {
+            " LIMIT ?2"
+        } else {
+            " LIMIT ?3"
+        }
+    } else {
+        ""
+    };
+    if staff {
+        format!(
+            "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
+                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
+                0,
+                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
+                    AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
+                (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
+                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+             FROM submissions s WHERE s.class_id = ?1
+             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+        )
+    } else {
+        format!(
+            "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
+                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2),
+                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2),
+                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
+                    AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
+                (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
+                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+             FROM submissions s WHERE s.class_id = ?1
+             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+        )
+    }
+}
+
+pub fn list_submissions(db: &Connection, auth: &AuthCtx, limit: i64) -> Vec<SubmissionRow> {
+    let staff = auth.is_staff();
+    let sql = submission_sql(staff, true);
+    let mut stmt = match db.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = if staff {
+        stmt.query_map(params![auth.class_id, limit], map_submission_row)
+    } else {
+        stmt.query_map(params![auth.class_id, auth.id, limit], map_submission_row)
+    };
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn load_submission(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<SubmissionRow> {
+    let staff = auth.is_staff();
+    let sql = if staff {
+        "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
+            0,
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
+                AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
+            (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
+                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+         FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
+    } else {
+        "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3),
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3),
+            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
+                AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
+            (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
+                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
+         FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
+    };
+    let row = if staff {
+        db.query_row(sql, params![sub_id, auth.class_id], map_submission_row)
+    } else {
+        db.query_row(
+            sql,
+            params![sub_id, auth.class_id, auth.id],
+            map_submission_row,
+        )
+    };
+    row.optional().ok().flatten()
+}
+
+pub fn list_uploads(
+    db: &Connection,
+    auth: &AuthCtx,
+    filter: Option<&str>,
+    limit: i64,
+    include_data: bool,
+) -> Vec<UploadRow> {
+    let staff = auth.is_staff();
+    let data_col = if include_data { "u.data" } else { "'[]'" };
+    let reply_filter = if staff {
+        match filter {
+            Some("pending") => "AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
+            Some("replied") => "AND EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
+            _ => "",
+        }
+    } else {
+        ""
+    };
+    let own_filter = if staff { "" } else { "AND u.auth_id = ?2" };
+    let sql = format!(
+        "SELECT u.id, u.submission_id, s.name, u.title, u.desc, {data_col}, u.created_at,
+                u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
+                (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
+                (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
+         FROM uploads u JOIN submissions s ON s.id = u.submission_id
+         WHERE u.class_id = ?1 {own_filter} {reply_filter}
+         ORDER BY u.created_at DESC, u.id DESC LIMIT {limit}"
+    );
+    let mut stmt = match db.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = if staff {
+        stmt.query_map(params![auth.class_id], map_upload_row)
+    } else {
+        stmt.query_map(params![auth.class_id, auth.id], map_upload_row)
+    };
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn load_upload(db: &Connection, auth: &AuthCtx, upload_id: &str) -> Option<UploadRow> {
+    let row = db
+        .query_row(
+            "SELECT u.id, u.submission_id, s.name, u.title, u.desc, u.data, u.created_at,
+                    u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
+                    (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
+                    (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
+             FROM uploads u JOIN submissions s ON s.id = u.submission_id
+             WHERE u.id = ?1 AND u.class_id = ?2",
+            params![upload_id, auth.class_id],
+            map_upload_row,
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    if auth.is_student() && row.auth_id.as_deref() != Some(auth.id.as_str()) {
+        return None;
+    }
+    Some(row)
+}
+
+pub fn load_replies(db: &Connection, upload_id: &str) -> Vec<ReplyRow> {
+    let mut stmt = match db.prepare(
+        "SELECT id, content, replier_name, role, created_at
+         FROM replies WHERE upload_id = ?1 ORDER BY created_at ASC, id ASC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![upload_id], |r| {
+        Ok(ReplyRow {
+            id: r.get(0)?,
+            content: r.get(1)?,
+            replier_name: r.get(2)?,
+            role: r.get(3)?,
+            created_at: r.get(4)?,
+        })
+    });
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn latest_upload_id(db: &Connection, auth: &AuthCtx, sub_id: &str) -> Option<String> {
+    let sql = if auth.is_staff() {
+        "SELECT id FROM uploads WHERE submission_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
+    } else {
+        "SELECT id FROM uploads WHERE submission_id = ?1 AND auth_id = ?2
+         ORDER BY created_at DESC, id DESC LIMIT 1"
+    };
+    let row = if auth.is_staff() {
+        db.query_row(sql, params![sub_id], |r| r.get::<_, String>(0))
+    } else {
+        db.query_row(sql, params![sub_id, auth.id], |r| r.get::<_, String>(0))
+    };
+    row.optional().ok().flatten()
+}
+
+pub fn own_upload_info(db: &Connection, auth: &AuthCtx, sub_id: &str) -> (i64, Option<String>) {
+    let count: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM uploads WHERE submission_id = ?1 AND auth_id = ?2",
+            params![sub_id, auth.id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let last = db
+        .query_row(
+            "SELECT id FROM uploads WHERE submission_id = ?1 AND auth_id = ?2
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            params![sub_id, auth.id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    (count, last)
+}
+
+pub fn upload_counts(db: &Connection, auth: &AuthCtx) -> (i64, i64, i64) {
+    let total: i64 = if auth.is_staff() {
+        db.query_row(
+            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1",
+            params![auth.class_id],
+            |r| r.get(0),
+        )
+    } else {
+        db.query_row(
+            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1 AND u.auth_id = ?2",
+            params![auth.class_id, auth.id],
+            |r| r.get(0),
+        )
+    }
+    .unwrap_or(0);
+    let pending: i64 = if auth.is_staff() {
+        db.query_row(
+            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1
+             AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
+            params![auth.class_id],
+            |r| r.get(0),
+        )
+    } else {
+        db.query_row(
+            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1 AND u.auth_id = ?2
+             AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
+            params![auth.class_id, auth.id],
+            |r| r.get(0),
+        )
+    }
+    .unwrap_or(0);
+    (total, pending, total - pending)
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HomeCounts {
+    pub members: i64,
+    pub submissions: i64,
+    pub uploads: i64,
+    pub pending: i64,
+    pub replied: i64,
+    pub active: i64,
+    pub replies: i64,
+}
+
+pub fn home_counts(db: &Connection, auth: &AuthCtx, now: i64) -> HomeCounts {
+    let members: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM auths WHERE class_id = ?1",
+            params![auth.class_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let submissions: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM submissions WHERE class_id = ?1",
+            params![auth.class_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let (uploads, pending, replied) = upload_counts(db, auth);
+    if auth.is_staff() {
+        let active: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM submissions
+                 WHERE class_id = ?1 AND (deadline IS NULL OR deadline > ?2)",
+                params![auth.class_id, now],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        HomeCounts {
+            members,
+            submissions,
+            uploads,
+            pending,
+            replied,
+            active,
+            replies: 0,
+        }
+    } else {
+        let replies: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM replies r JOIN uploads u ON u.id = r.upload_id
+                 WHERE u.auth_id = ?1",
+                params![auth.id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        HomeCounts {
+            members,
+            submissions,
+            uploads,
+            pending,
+            replied,
+            active: 0,
+            replies,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 下载 / 导出
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct DownloadUploadRow {
+    pub id: String,
+    pub student_id: Option<String>,
+    pub short_id: Option<i64>,
+    pub title: String,
+    pub desc: String,
+    pub data: Value,
+    pub created_at: i64,
+    pub uploader_name: String,
+    pub role: String,
+}
+
+pub fn list_download_uploads(db: &Connection, submission_id: &str) -> Vec<DownloadUploadRow> {
+    let mut stmt = match db.prepare(
+        "SELECT id, student_id, short_id, title, desc, data, created_at, uploader_name, role
+         FROM uploads WHERE submission_id = ?1 ORDER BY created_at ASC, id ASC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![submission_id], |r| {
+        let data_raw: String = r.get(5)?;
+        let data = serde_json::from_str::<Value>(&data_raw).unwrap_or_else(|_| json!([]));
+        Ok(DownloadUploadRow {
+            id: r.get(0)?,
+            student_id: r.get(1)?,
+            short_id: r.get(2)?,
+            title: r.get(3)?,
+            desc: r.get(4)?,
+            data,
+            created_at: r.get(6)?,
+            uploader_name: r.get(7)?,
+            role: r.get(8)?,
+        })
+    });
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn reply_contents(db: &Connection, upload_id: &str) -> Vec<String> {
+    let mut stmt = match db
+        .prepare("SELECT content FROM replies WHERE upload_id = ?1 ORDER BY created_at ASC")
+    {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![upload_id], |r| r.get::<_, String>(0));
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn submission_ids_by_student(db: &Connection, class_id: &str, student_id: &str) -> Vec<String> {
+    let mut stmt = match db.prepare(
+        "SELECT DISTINCT submission_id FROM uploads
+         WHERE class_id = ?1 AND student_id = ?2",
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![class_id, student_id], |r| r.get::<_, String>(0));
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn submission_ids_by_short(db: &Connection, class_id: &str, short_id: i64) -> Vec<String> {
+    let mut stmt = match db.prepare(
+        "SELECT DISTINCT submission_id FROM uploads
+         WHERE class_id = ?1 AND short_id = ?2",
+    ) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![class_id, short_id], |r| r.get::<_, String>(0));
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 写入：征集 / 提交 / 回复
+// ---------------------------------------------------------------------------
+
+pub fn insert_upload(
+    db: &Connection,
+    auth: &AuthCtx,
+    submission_id: &str,
+    title: &str,
+    desc: &str,
+    data: &Value,
+) -> Result<String, String> {
+    let id = new_id("up");
+    let now = now_ts();
+    db.execute(
+        "INSERT INTO uploads
+         (id, submission_id, class_id, auth_id, user_id, student_id, short_id,
+          uploader_name, role, title, desc, data, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            id,
+            submission_id,
+            auth.class_id,
+            auth.id,
+            auth.user_id,
+            auth.student_id,
+            auth.short_id,
+            auth.identity(),
+            auth.role,
+            title,
+            desc,
+            data.to_string(),
+            now
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+pub fn insert_submission(
+    db: &Connection,
+    auth: &AuthCtx,
+    name: &str,
+    desc: &str,
+    kind: &str,
+    deadline: Option<i64>,
+) -> Result<String, String> {
+    let id = new_id("sub");
+    db.execute(
+        "INSERT INTO submissions
+         (id, class_id, name, desc, type, deadline, created_at, created_by, created_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            id,
+            auth.class_id,
+            name,
+            desc,
+            kind,
+            deadline,
+            now_ts(),
+            auth.id,
+            auth.identity()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+pub fn insert_reply(
+    db: &Connection,
+    auth: &AuthCtx,
+    upload_id: &str,
+    content: &str,
+) -> Result<String, String> {
+    let id = new_id("rep");
+    db.execute(
+        "INSERT INTO replies (id, upload_id, auth_id, replier_name, role, content, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            id,
+            upload_id,
+            auth.id,
+            auth.identity(),
+            auth.role,
+            content,
+            now_ts()
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+pub fn delete_auth(db: &Connection, auth_id: &str) -> Result<(), String> {
+    db.execute("DELETE FROM auths WHERE id = ?1", params![auth_id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn auth_ids_in_class(db: &Connection, class_id: &str) -> Vec<String> {
+    let mut stmt = match db.prepare("SELECT id FROM auths WHERE class_id = ?1") {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt.query_map(params![class_id], |r| r.get::<_, String>(0));
+    match rows {
+        Ok(iter) => iter.filter_map(Result::ok).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn delete_class(db: &Connection, class_id: &str) -> Result<(), String> {
+    db.execute("DELETE FROM classes WHERE id = ?1", params![class_id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn delete_submission(db: &Connection, id: &str) -> Result<(), String> {
+    db.execute("DELETE FROM submissions WHERE id = ?1", params![id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn delete_upload(db: &Connection, id: &str) -> Result<(), String> {
+    db.execute("DELETE FROM uploads WHERE id = ?1", params![id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn delete_reply(db: &Connection, id: &str) -> Result<(), String> {
+    db.execute("DELETE FROM replies WHERE id = ?1", params![id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn rename_auth(db: &Connection, auth_id: &str, name: &str) -> Result<(), String> {
+    let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE auths SET display_name = ?1 WHERE id = ?2",
+        params![name, auth_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE uploads SET uploader_name = ?1 WHERE auth_id = ?2",
+        params![name, auth_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE replies SET replier_name = ?1 WHERE auth_id = ?2",
+        params![name, auth_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE submissions SET created_name = ?1 WHERE created_by = ?2",
+        params![name, auth_id],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// 用户账号
+// ---------------------------------------------------------------------------
+
+pub fn username_taken(db: &Connection, username: &str) -> bool {
+    db.query_row(
+        "SELECT 1 FROM users WHERE username = ?1 COLLATE NOCASE",
+        params![username],
+        |_| Ok(()),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .is_some()
+}
+
+pub fn register_user(
+    db: &Connection,
+    username: &str,
+    salt: &str,
+    pwhash: &str,
+) -> Result<i64, String> {
+    if username_taken(db, username) {
+        return Err("username already exists".to_string());
+    }
+    db.execute(
+        "INSERT INTO users (username, salt, pwhash, display_name, prefs, created_at)
+         VALUES (?1, ?2, ?3, ?1, '{}', ?4)",
+        params![username, salt, pwhash, now_ts()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(db.last_insert_rowid())
+}
+
+pub fn bind_auth_if_unclaimed(
+    db: &Connection,
+    auth_id: &str,
+    user_id: i64,
+) -> Result<bool, String> {
+    let changed = db
+        .execute(
+            "UPDATE auths SET user_id = ?1 WHERE id = ?2 AND user_id IS NULL",
+            params![user_id, auth_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(changed == 1)
+}
+
+pub fn update_user_prefs(
+    db: &Connection,
+    user_id: i64,
+    display_name: &str,
+    prefs: &Prefs,
+) -> Result<(), String> {
+    db.execute(
+        "UPDATE users SET display_name = ?1, prefs = ?2 WHERE id = ?3",
+        params![display_name, prefs.to_json(), user_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+pub fn user_secret(db: &Connection, user_id: i64) -> Option<(String, String)> {
+    db.query_row(
+        "SELECT salt, pwhash FROM users WHERE id = ?1",
+        params![user_id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+pub fn update_user_password(
+    db: &Connection,
+    user_id: i64,
+    salt: &str,
+    pwhash: &str,
+) -> Result<(), String> {
+    db.execute(
+        "UPDATE users SET salt = ?1, pwhash = ?2 WHERE id = ?3",
+        params![salt, pwhash, user_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

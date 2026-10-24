@@ -5,8 +5,6 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use rusqlite::{params, OptionalExtension};
-use serde_json::Value;
 
 use crate::db;
 use crate::strings::{f2, t};
@@ -17,7 +15,7 @@ use crate::tools::{
 };
 use crate::types::{
     AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, LoginForm, PasswordForm, Prefs,
-    PrefsForm, ReplyRow, Session, SubmissionRow, UploadRow, UserLoginForm, UserRegisterForm,
+    PrefsForm, Session, UserLoginForm, UserRegisterForm,
 };
 use crate::view::{self, Flash, LayoutCtx, StatItem};
 
@@ -121,371 +119,43 @@ fn logout_all(st: &AppState, headers: &HeaderMap) -> Response {
 }
 
 // ---------------------------------------------------------------------------
-// 数据库读取：列表 / 详情
+// 首页统计卡片（查询逻辑在 db.rs）
 // ---------------------------------------------------------------------------
 
-fn map_submission(r: &rusqlite::Row<'_>) -> rusqlite::Result<SubmissionRow> {
-    Ok(SubmissionRow {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        desc: r.get(2)?,
-        kind: r.get(3)?,
-        deadline: r.get(4)?,
-        created_at: r.get(5)?,
-        created_name: r.get(6)?,
-        upload_count: r.get(7)?,
-        my_upload_count: r.get(8)?,
-        pending_count: r.get(9)?,
-        last_upload_id: r.get(10)?,
-    })
-}
-
-fn map_upload(r: &rusqlite::Row<'_>) -> rusqlite::Result<UploadRow> {
-    let data_raw: String = r.get(5)?;
-    let data = serde_json::from_str::<Value>(&data_raw).unwrap_or(Value::Null);
-    Ok(UploadRow {
-        id: r.get(0)?,
-        submission_id: r.get(1)?,
-        submission_name: r.get(2)?,
-        title: r.get(3)?,
-        desc: r.get(4)?,
-        data,
-        created_at: r.get(6)?,
-        uploader_name: r.get(7)?,
-        student_id: r.get(8)?,
-        short_id: r.get(9)?,
-        role: r.get(10)?,
-        auth_id: r.get(11)?,
-        reply_count: r.get(12)?,
-        last_reply_at: r.get(13)?,
-    })
-}
-
-fn submission_sql(staff: bool, with_limit: bool) -> String {
-    let tail = if with_limit {
-        if staff {
-            " LIMIT ?2"
-        } else {
-            " LIMIT ?3"
-        }
-    } else {
-        ""
-    };
-    if staff {
-        format!(
-            "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
-                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
-                0,
-                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
-                    AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
-                (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
-                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
-             FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
-        )
-    } else {
-        format!(
-            "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
-                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2),
-                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2),
-                (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
-                    AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
-                (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
-                    ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
-             FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
-        )
-    }
-}
-
-fn list_submissions(db: &rusqlite::Connection, auth: &AuthCtx, limit: i64) -> Vec<SubmissionRow> {
-    let staff = auth.is_staff();
-    let sql = submission_sql(staff, true);
-    let mut stmt = match db.prepare(&sql) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = if staff {
-        stmt.query_map(params![auth.class_id, limit], map_submission)
-    } else {
-        stmt.query_map(params![auth.class_id, auth.id, limit], map_submission)
-    };
-    match rows {
-        Ok(iter) => iter.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn load_submission(
-    db: &rusqlite::Connection,
-    auth: &AuthCtx,
-    sub_id: &str,
-) -> Option<SubmissionRow> {
-    let staff = auth.is_staff();
-    let sql = if staff {
-        "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
-            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id),
-            0,
-            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id
-                AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
-            (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
-                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
-         FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
-    } else {
-        "SELECT s.id, s.name, s.desc, s.type, s.deadline, s.created_at, s.created_name,
-            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3),
-            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3),
-            (SELECT COUNT(*) FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
-                AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)),
-            (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?3
-                ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
-         FROM submissions s WHERE s.id = ?1 AND s.class_id = ?2"
-    };
-    let row = if staff {
-        db.query_row(sql, params![sub_id, auth.class_id], map_submission)
-    } else {
-        db.query_row(sql, params![sub_id, auth.class_id, auth.id], map_submission)
-    };
-    row.optional().ok().flatten()
-}
-
-fn list_uploads(
-    db: &rusqlite::Connection,
-    auth: &AuthCtx,
-    filter: Option<&str>,
-    limit: i64,
-    include_data: bool,
-) -> Vec<UploadRow> {
-    let staff = auth.is_staff();
-    let data_col = if include_data { "u.data" } else { "'[]'" };
-    let reply_filter = if staff {
-        match filter {
-            Some("pending") => "AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
-            Some("replied") => "AND EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
-            _ => "",
-        }
-    } else {
-        ""
-    };
-    let own_filter = if staff { "" } else { "AND u.auth_id = ?2" };
-    let sql = format!(
-        "SELECT u.id, u.submission_id, s.name, u.title, u.desc, {data_col}, u.created_at,
-                u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
-                (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
-                (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
-         FROM uploads u JOIN submissions s ON s.id = u.submission_id
-         WHERE u.class_id = ?1 {own_filter} {reply_filter}
-         ORDER BY u.created_at DESC, u.id DESC LIMIT {limit}"
-    );
-    let mut stmt = match db.prepare(&sql) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = if staff {
-        stmt.query_map(params![auth.class_id], map_upload)
-    } else {
-        stmt.query_map(params![auth.class_id, auth.id], map_upload)
-    };
-    match rows {
-        Ok(iter) => iter.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn load_upload(db: &rusqlite::Connection, auth: &AuthCtx, upload_id: &str) -> Option<UploadRow> {
-    let row = db
-        .query_row(
-            "SELECT u.id, u.submission_id, s.name, u.title, u.desc, u.data, u.created_at,
-                    u.uploader_name, u.student_id, u.short_id, u.role, u.auth_id,
-                    (SELECT COUNT(*) FROM replies r WHERE r.upload_id = u.id),
-                    (SELECT MAX(r.created_at) FROM replies r WHERE r.upload_id = u.id)
-             FROM uploads u JOIN submissions s ON s.id = u.submission_id
-             WHERE u.id = ?1 AND u.class_id = ?2",
-            params![upload_id, auth.class_id],
-            map_upload,
-        )
-        .optional()
-        .ok()
-        .flatten()?;
-    if auth.is_student() && row.auth_id.as_deref() != Some(auth.id.as_str()) {
-        return None;
-    }
-    Some(row)
-}
-
-fn load_replies(db: &rusqlite::Connection, upload_id: &str) -> Vec<ReplyRow> {
-    let mut stmt = match db.prepare(
-        "SELECT id, content, replier_name, role, created_at
-         FROM replies WHERE upload_id = ?1 ORDER BY created_at ASC, id ASC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = stmt.query_map(params![upload_id], |r| {
-        Ok(ReplyRow {
-            id: r.get(0)?,
-            content: r.get(1)?,
-            replier_name: r.get(2)?,
-            role: r.get(3)?,
-            created_at: r.get(4)?,
-        })
-    });
-    match rows {
-        Ok(iter) => iter.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn latest_upload_id(db: &rusqlite::Connection, auth: &AuthCtx, sub_id: &str) -> Option<String> {
-    let sql = if auth.is_staff() {
-        "SELECT id FROM uploads WHERE submission_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 1"
-    } else {
-        "SELECT id FROM uploads WHERE submission_id = ?1 AND auth_id = ?2
-         ORDER BY created_at DESC, id DESC LIMIT 1"
-    };
-    let row = if auth.is_staff() {
-        db.query_row(sql, params![sub_id], |r| r.get::<_, String>(0))
-    } else {
-        db.query_row(sql, params![sub_id, auth.id], |r| r.get::<_, String>(0))
-    };
-    row.optional().ok().flatten()
-}
-
-fn own_upload_info(
-    db: &rusqlite::Connection,
-    auth: &AuthCtx,
-    sub_id: &str,
-) -> (i64, Option<String>) {
-    let count: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM uploads WHERE submission_id = ?1 AND auth_id = ?2",
-            params![sub_id, auth.id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    let last = db
-        .query_row(
-            "SELECT id FROM uploads WHERE submission_id = ?1 AND auth_id = ?2
-             ORDER BY created_at DESC, id DESC LIMIT 1",
-            params![sub_id, auth.id],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()
-        .ok()
-        .flatten();
-    (count, last)
-}
-
-fn upload_counts(db: &rusqlite::Connection, auth: &AuthCtx) -> (i64, i64, i64) {
-    let own = if auth.is_staff() {
-        String::new()
-    } else {
-        "AND u.auth_id = 'OWN'".to_string()
-    };
-    let _ = own;
-    let total: i64 = if auth.is_staff() {
-        db.query_row(
-            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1",
-            params![auth.class_id],
-            |r| r.get(0),
-        )
-    } else {
-        db.query_row(
-            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1 AND u.auth_id = ?2",
-            params![auth.class_id, auth.id],
-            |r| r.get(0),
-        )
-    }
-    .unwrap_or(0);
-    let pending: i64 = if auth.is_staff() {
-        db.query_row(
-            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1
-             AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
-            params![auth.class_id],
-            |r| r.get(0),
-        )
-    } else {
-        db.query_row(
-            "SELECT COUNT(*) FROM uploads u WHERE u.class_id = ?1 AND u.auth_id = ?2
-             AND NOT EXISTS (SELECT 1 FROM replies r WHERE r.upload_id = u.id)",
-            params![auth.class_id, auth.id],
-            |r| r.get(0),
-        )
-    }
-    .unwrap_or(0);
-    (total, pending, total - pending)
-}
-
-fn home_stats(
-    db: &rusqlite::Connection,
-    auth: &AuthCtx,
-    now: i64,
-    page_role: &str,
-) -> Vec<StatItem> {
-    let members: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM auths WHERE class_id = ?1",
-            params![auth.class_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    let subs: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM submissions WHERE class_id = ?1",
-            params![auth.class_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    let (uploads, pending, replied) = upload_counts(db, auth);
-    if auth.is_staff() {
-        let active: i64 = db
-            .query_row(
-                "SELECT COUNT(*) FROM submissions
-                 WHERE class_id = ?1 AND (deadline IS NULL OR deadline > ?2)",
-                params![auth.class_id, now],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
+fn home_stats(counts: db::HomeCounts, page_role: &str) -> Vec<StatItem> {
+    if page_role == "teacher" || page_role == "admin" {
         vec![
             StatItem {
                 label: t("stat_members"),
-                value: members.to_string(),
+                value: counts.members.to_string(),
                 icon: "users",
                 tone: "",
             },
             StatItem {
                 label: t("stat_active_submissions"),
-                value: active.to_string(),
+                value: counts.active.to_string(),
                 icon: "inbox",
                 tone: "sky",
             },
             StatItem {
                 label: t("stat_pending"),
-                value: pending.to_string(),
+                value: counts.pending.to_string(),
                 icon: "clock",
                 tone: "amber",
             },
             StatItem {
                 label: t("stat_replied"),
-                value: replied.to_string(),
+                value: counts.replied.to_string(),
                 icon: "check-circle",
                 tone: "green",
             },
         ]
     } else {
         let parent = page_role == "parent";
-        let replies: i64 = db
-            .query_row(
-                "SELECT COUNT(*) FROM replies r JOIN uploads u ON u.id = r.upload_id
-                 WHERE u.auth_id = ?1",
-                params![auth.id],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
         vec![
             StatItem {
                 label: t("stat_class_submissions"),
-                value: subs.to_string(),
+                value: counts.submissions.to_string(),
                 icon: "inbox",
                 tone: "",
             },
@@ -495,19 +165,19 @@ fn home_stats(
                 } else {
                     t("stat_my_uploads")
                 },
-                value: uploads.to_string(),
+                value: counts.uploads.to_string(),
                 icon: "folder",
                 tone: "sky",
             },
             StatItem {
                 label: t("stat_replies_received"),
-                value: replies.to_string(),
+                value: counts.replies.to_string(),
                 icon: "reply",
                 tone: "green",
             },
             StatItem {
                 label: t("stat_pending"),
-                value: pending.to_string(),
+                value: counts.pending.to_string(),
                 icon: "clock",
                 tone: "amber",
             },
@@ -737,8 +407,8 @@ async fn render_home_route(
 
     match segments.as_slice() {
         [] => {
-            let stats = home_stats(&db, &auth, now, &active_role);
-            let submissions = list_submissions(&db, &auth, 4);
+            let stats = home_stats(db::home_counts(&db, &auth, now), &active_role);
+            let submissions = db::list_submissions(&db, &auth, 4);
             let (filter, title_key, hint_key) = match active_role.as_str() {
                 "teacher" => (Some("pending"), "home_recent_teacher", "home_pending_hint"),
                 "admin" => (None, "home_recent_admin", "home_admin_hint"),
@@ -747,7 +417,7 @@ async fn render_home_route(
             };
             let uploads_title = t(title_key);
             let uploads_hint = t(hint_key);
-            let uploads = list_uploads(&db, &auth, filter, 4, false);
+            let uploads = db::list_uploads(&db, &auth, filter, 4, false);
             drop(db);
             let ctx = page_context(
                 &st,
@@ -769,7 +439,7 @@ async fn render_home_route(
             ))
         }
         ["submissions"] => {
-            let rows = list_submissions(&db, &auth, 500);
+            let rows = db::list_submissions(&db, &auth, 500);
             drop(db);
             let ctx = page_context(
                 &st,
@@ -820,8 +490,8 @@ async fn render_home_route(
             } else {
                 None
             };
-            let counts = upload_counts(&db, &auth);
-            let rows = list_uploads(&db, &auth, filter, 300, false);
+            let counts = db::upload_counts(&db, &auth);
+            let rows = db::list_uploads(&db, &auth, filter, 300, false);
             let staff = auth.is_staff();
             drop(db);
             let ctx = page_context(
@@ -843,7 +513,7 @@ async fn render_home_route(
             ))
         }
         ["submission", sub_id] => {
-            let Some(sub) = load_submission(&db, &auth, sub_id) else {
+            let Some(sub) = db::load_submission(&db, &auth, sub_id) else {
                 drop(db);
                 let ctx = page_context(
                     &st,
@@ -857,7 +527,7 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
-            let next = latest_upload_id(&db, &auth, &sub.id);
+            let next = db::latest_upload_id(&db, &auth, &sub.id);
             drop(db);
             let target = match next {
                 Some(id) => format!("{base}upload/{id}/"),
@@ -866,7 +536,7 @@ async fn render_home_route(
             redirect(&target)
         }
         ["submission", sub_id, "all"] => {
-            let Some(sub) = load_submission(&db, &auth, sub_id) else {
+            let Some(sub) = db::load_submission(&db, &auth, sub_id) else {
                 drop(db);
                 let ctx = page_context(
                     &st,
@@ -881,12 +551,12 @@ async fn render_home_route(
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
             let rows = if auth.is_staff() {
-                list_uploads(&db, &auth, None, 500, false)
+                db::list_uploads(&db, &auth, None, 500, false)
                     .into_iter()
                     .filter(|u| u.submission_id == sub.id)
                     .collect::<Vec<_>>()
             } else {
-                list_uploads(&db, &auth, None, 500, false)
+                db::list_uploads(&db, &auth, None, 500, false)
                     .into_iter()
                     .filter(|u| u.submission_id == sub.id)
                     .collect::<Vec<_>>()
@@ -907,7 +577,7 @@ async fn render_home_route(
             html(view::submission_all(&ctx, &sub, &rows, staff, admin))
         }
         ["submission", sub_id, "upload"] => {
-            let Some(sub) = load_submission(&db, &auth, sub_id) else {
+            let Some(sub) = db::load_submission(&db, &auth, sub_id) else {
                 drop(db);
                 let ctx = page_context(
                     &st,
@@ -921,7 +591,7 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
-            let (count, last) = own_upload_info(&db, &auth, &sub.id);
+            let (count, last) = db::own_upload_info(&db, &auth, &sub.id);
             drop(db);
             let ctx = page_context(
                 &st,
@@ -936,7 +606,7 @@ async fn render_home_route(
             html(view::upload_form(&ctx, &sub, count, last.as_deref()))
         }
         ["upload", upload_id] => {
-            let Some(upload) = load_upload(&db, &auth, upload_id) else {
+            let Some(upload) = db::load_upload(&db, &auth, upload_id) else {
                 drop(db);
                 let ctx = page_context(
                     &st,
@@ -950,7 +620,7 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_upload_missing"));
             };
-            let sub = load_submission(&db, &auth, &upload.submission_id);
+            let sub = db::load_submission(&db, &auth, &upload.submission_id);
             let Some(sub) = sub else {
                 drop(db);
                 let ctx = page_context(
@@ -965,7 +635,7 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_related_missing"));
             };
-            let replies = load_replies(&db, &upload.id);
+            let replies = db::load_replies(&db, &upload.id);
             let staff = auth.is_staff();
             let admin = auth.is_admin();
             drop(db);
@@ -1134,27 +804,9 @@ pub async fn user_register(
     let pwhash = hash_password(&salt, &form.password);
     let created = {
         let db = st.db.lock().unwrap();
-        let exists: Option<i64> = db
-            .query_row(
-                "SELECT id FROM users WHERE username = ?1 COLLATE NOCASE",
-                params![username],
-                |r| r.get(0),
-            )
-            .optional()
-            .ok()
-            .flatten();
-        if exists.is_some() {
-            None
-        } else {
-            let res = db.execute(
-                "INSERT INTO users (username, salt, pwhash, display_name, prefs, created_at)
-                 VALUES (?1, ?2, ?3, ?1, '{}', ?4)",
-                params![username, salt, pwhash, now_ts()],
-            );
-            res.ok().map(|_| db.last_insert_rowid())
-        }
+        db::register_user(&db, username, &salt, &pwhash)
     };
-    let Some(user_id) = created else {
+    let Ok(user_id) = created else {
         return msg_redirect("/user", "err", &t("flash_username_taken"));
     };
     let mut cookies = Vec::new();
@@ -1162,10 +814,7 @@ pub async fn user_register(
     if let Some(auth) = claim {
         {
             let db = st.db.lock().unwrap();
-            let _ = db.execute(
-                "UPDATE auths SET user_id = ?1 WHERE id = ?2",
-                params![user_id, auth.id],
-            );
+            let _ = db::bind_auth_if_unclaimed(&db, &auth.id, user_id);
         }
         clear_role_session(&st, &headers);
         let token = create_role_session(&st, &auth, auth.page_role(), "mob");
@@ -1206,13 +855,10 @@ pub async fn user_claim(
     }
     let result = {
         let db = st.db.lock().unwrap();
-        db.execute(
-            "UPDATE auths SET user_id = ?1 WHERE id = ?2 AND user_id IS NULL",
-            params![user.id, auth.id],
-        )
+        db::bind_auth_if_unclaimed(&db, &auth.id, user.id)
     };
     match result {
-        Ok(1) => msg_redirect("/user", "ok", &t("flash_bound")),
+        Ok(true) => msg_redirect("/user", "ok", &t("flash_bound")),
         _ => msg_redirect("/user", "err", &t("flash_bind_failed")),
     }
 }
@@ -1271,7 +917,7 @@ pub async fn user_delete_auth(
         .unwrap_or(false);
     {
         let db = st.db.lock().unwrap();
-        if let Err(e) = db.execute("DELETE FROM auths WHERE id = ?1", params![auth_id]) {
+        if let Err(e) = db::delete_auth(&db, &auth_id) {
             eprintln!("delete auth failed: {e}");
             return msg_redirect("/user", "err", &t("flash_delete_failed"));
         }
@@ -1316,10 +962,7 @@ pub async fn user_prefs(
     prefs.sanitize();
     let res = {
         let db = st.db.lock().unwrap();
-        db.execute(
-            "UPDATE users SET display_name = ?1, prefs = ?2 WHERE id = ?3",
-            params![display, prefs.to_json(), user.id],
-        )
+        db::update_user_prefs(&db, user.id, &display, &prefs)
     };
     match res {
         Ok(_) => msg_redirect("/user", "ok", &t("flash_prefs_saved")),
@@ -1346,14 +989,7 @@ pub async fn user_password(
     }
     let secret = {
         let db = st.db.lock().unwrap();
-        db.query_row(
-            "SELECT salt, pwhash FROM users WHERE id = ?1",
-            params![user.id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        )
-        .optional()
-        .ok()
-        .flatten()
+        db::user_secret(&db, user.id)
     };
     let Some((salt, hash)) = secret else {
         return msg_redirect("/user", "err", &t("flash_account_missing"));
@@ -1365,10 +1001,7 @@ pub async fn user_password(
     let new_hash = hash_password(&new_salt, &form.new);
     let res = {
         let db = st.db.lock().unwrap();
-        db.execute(
-            "UPDATE users SET salt = ?1, pwhash = ?2 WHERE id = ?3",
-            params![new_salt, new_hash, user.id],
-        )
+        db::update_user_password(&db, user.id, &new_salt, &new_hash)
     };
     match res {
         Ok(_) => {

@@ -104,7 +104,7 @@ async fn main() {
     let conn = db::open(&db_path).expect("database initialization failed");
 
     let state = AppState {
-        db: Arc::new(Mutex::new(conn)),
+        db: Arc::new(db::Database::new(conn)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         user_sessions: Arc::new(Mutex::new(HashMap::new())),
     };

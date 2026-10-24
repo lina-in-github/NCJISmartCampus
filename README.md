@@ -225,6 +225,20 @@ name=admin_slogan lines=2 content=
 
 API 不使用该字符串库：API 的错误与成功消息统一为英文。
 
+### 4.8 数据库访问边界（v0.1.2）
+
+- `src/db.rs` 是业务数据库的唯一访问层：**所有 SQL、事务、连接生命周期、行映射**都在这里；
+  `db::Database` 封装 `Mutex<Connection>`，页面/API/工具层只调用 `db::*` 函数；
+- `src/schema.sql` 只包含建表 DDL，由 `db.rs` 通过 `include_str!` 加载；查询、写入、事务不会出现在其他模块；
+- `src/strings.rs` 独立负责 `strings.db` 的建表、同步与读取；
+- `src/pages.rs`、`src/api.rs`、`src/tools.rs`、`src/main.rs` 不再包含 SQL 或 `rusqlite` 调用；
+- 可以用下面的命令验证没有数据库逻辑泄漏：
+  ```bash
+  grep -RInE 'query_row|query_map|\.prepare\(|params!|rusqlite' src \
+    --include='*.rs' | grep -v 'src/db.rs' | grep -v 'src/strings.rs'
+  # 期望：无输出
+  ```
+
 ---
 
 ## 5. 界面
@@ -247,7 +261,7 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解�
 ./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3）
 ```
 
-`scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、登录、发布征集、上传、下载、匹配模式、回复、权限拒绝、创建班级/成员、删除密钥与删除对象，并自动清理进程与数据。
+`scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、登录、发布征集、上传、下载、匹配模式、回复、账号中心表单（注册/偏好/密码/删除身份）、改名、权限拒绝、创建/删除班级与成员、删除密钥与对象，并自动清理进程与数据。
 
 ---
 
@@ -265,13 +279,13 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解�
 │   └── smoke.sh            # HTTP 冒烟测试
 └── src/
     ├── main.rs             # 路由与启动
-    ├── schema.sql          # SQLite 表结构
+    ├── schema.sql          # SQLite DDL（由 db.rs 加载）
     ├── strings.rs          # 字符串解析、strings.db 同步、标签/格式化
-    ├── db.rs               # 数据库访问、建班/成员、演示数据
+    ├── db.rs               # 唯一业务 SQL/事务/连接层、建班/成员、演示数据
     ├── types.rs            # 状态、模型、请求/表单
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
-    ├── api.rs              # /api/* 处理（英文消息）
-    ├── pages.rs            # 页面路由、账号中心动作
+    ├── api.rs              # /api/* 处理（只调用 db::*，英文消息）
+    ├── pages.rs            # 页面路由、账号中心动作（只调用 db::*）
     ├── view.rs             # 服务端 HTML 渲染（@[strings/key] 标签）
     └── assets/
         ├── app.css         # 响应式设计系统

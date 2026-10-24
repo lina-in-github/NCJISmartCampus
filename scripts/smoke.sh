@@ -136,6 +136,26 @@ assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE
 curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的身份" || fail "登录页缺少身份选择"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
+echo "==> 账号中心表单（用户 / 偏好 / 密码 / 删除身份）"
+USER_COOKIE="$TMP/user-cookie"
+assert_eq "$(curl -sS -c "$USER_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'username=student&password=student123' "$BASE/user/login")" "303" "账号登录"
+USER_HTML="$(curl -sS -b "$USER_COOKIE" "$BASE/user")"
+grep -q "我的班级身份" <<<"$USER_HTML" || fail "账号中心未渲染"
+
+REG_COOKIE="$TMP/reg-cookie"
+assert_eq "$(curl -sS -c "$REG_COOKIE" -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
+  --data-urlencode 'username=smokeuser' --data-urlencode 'password=pass1234' \
+  --data-urlencode 'password2=pass1234' --data-urlencode 'key=SC-STU-DEMO-2026-02' \
+  "$BASE/user/register")" "303" "账号注册并绑定密钥"
+REG_HTML="$(curl -sS -b "$REG_COOKIE" "$BASE/user")"
+grep -q "SC-STU-DEMO-2026-02" <<<"$REG_HTML" || fail "注册后未显示绑定密钥"
+assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'display_name=Smoke&theme=dark&mode=pc' "$BASE/user/prefs")" "303" "保存偏好"
+assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'old=pass1234&new=pass5678&new2=pass5678' "$BASE/user/password")" "303" "修改密码"
+assert_eq "$(curl -sS -c "$TMP/relogin-cookie" -o /dev/null -w '%{http_code}' -X POST -d 'username=smokeuser&password=pass5678' "$BASE/user/login")" "303" "新密码登录"
+AUTH_ID="$(grep -o 'name="auth_id" value="[^"]*"' <<<"$REG_HTML" | head -1 | cut -d'"' -f4)"
+[[ -n "$AUTH_ID" ]] || fail "未找到待删除的 auth id"
+assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST "$BASE/user/auth/$AUTH_ID/delete")" "303" "删除自己的身份"
+
 echo "==> 身份改名 /api/rename-auth"
 NEW_TEACHER_NAME="林书言（改）"
 NEW_STUDENT_NAME="陈小满（改）"
@@ -188,8 +208,10 @@ assert_jq "$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"mat
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SUB\"}")" '.ok == true' "删除征集"
 assert_eq "$(http_code /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")" "404" "征集已删除"
 
-echo "==> 清理创建的新成员密钥"
+echo "==> 清理创建的新成员密钥 / 班级"
 post /api/del-key "{\"auth\":\"$NEW_KEY2\"}" >/dev/null || true
+assert_jq "$(post /api/del-object "{\"auth\":\"$CLASS_KEY\",\"id\":\"$CLASS\"}")" '.ok == true' "删除班级"
+assert_eq "$(http_code /api/all-submission "{\"auth\":\"$CLASS_KEY\"}")" "401" "班级删除后密钥失效"
 
 echo
 echo "PASS: 智慧校园冒烟测试全部通过 ✅"
