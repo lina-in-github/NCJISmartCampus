@@ -112,6 +112,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(pages::root))
         .route("/login", get(pages::login_index))
+        .route("/login/account", get(pages::login_account_page))
         .route(
             "/login/{mode}/{role}",
             get(pages::login_page).post(pages::login_submit),

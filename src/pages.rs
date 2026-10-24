@@ -21,6 +21,8 @@ use crate::view::{self, Flash, LayoutCtx, StatItem};
 
 type Q = Query<HashMap<String, String>>;
 
+const ACCOUNT_LOGIN: &str = "/login/account";
+
 // ---------------------------------------------------------------------------
 // 通用
 // ---------------------------------------------------------------------------
@@ -333,18 +335,11 @@ pub async fn login_submit(
     }
     clear_role_session(&st, &headers);
     let target = format!("/home/{mode}/{req_role}/", mode = mode, req_role = req_role);
-    let mut cookies = vec![crate::tools::session_cookie(
+    let cookies = vec![crate::tools::session_cookie(
         SID_COOKIE,
         &create_role_session(&st, &auth, req_role, mode),
     )];
-    // 密钥已绑定用户时顺带建立账号会话，账号中心与身份删除后的体验更连贯。
-    if let Some(uid) = auth.user_id {
-        clear_user_session(&st, &headers);
-        cookies.push(crate::tools::session_cookie(
-            USID_COOKIE,
-            &create_user_session(&st, uid),
-        ));
-    }
+    // 角色登录只建立 sc_sid；账号中心必须通过用户名/密码另行建立 sc_uid。
     with_cookies(&target, cookies)
 }
 
@@ -683,51 +678,50 @@ pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> Response 
 // ---------------------------------------------------------------------------
 
 pub async fn user_page(State(st): State<AppState>, headers: HeaderMap, Query(q): Q) -> Response {
-    let flash = flash_from(&q);
-    let current = current_user(&st, &headers);
-    if let Some(user) = current {
-        let current_auth_id = role_session(&st, &headers)
-            .map(|(_, a)| a.id)
-            .unwrap_or_default();
-        let (auths, admin_auths) = {
-            let db = st.db.lock().unwrap();
-            let auths = db::user_auths(&db, user.id);
-            let admin_auths = auths
-                .iter()
-                .filter(|a| a.role == "admin")
-                .cloned()
-                .collect::<Vec<_>>();
-            (auths, admin_auths)
-        };
-        let prefs = user.prefs.clone();
-        let mut ctx = LayoutCtx::account(&user, &prefs, flash);
-        ctx.auth_id = current_auth_id;
-        return html(view::user_account(
-            &ctx,
-            &user,
-            &auths,
-            &admin_auths,
-            &Flash::default(),
-        ));
-    }
-
-    // 未登录：若当前有未绑定账号的角色会话，则预填该密钥并提示绑定。
-    let (mode, prefill, note) = if let Some((session, auth)) = role_session(&st, &headers) {
-        let note = f2(
-            "account_session_note",
-            auth.class_name,
-            crate::tools::role_label(&auth.role),
-        );
-        let prefill = if auth.user_id.is_none() {
-            auth.key.clone()
-        } else {
-            String::new()
-        };
-        (session.mode, prefill, Some(note))
-    } else {
-        (detect_mode(&headers), String::new(), None)
+    let Some(user) = current_user(&st, &headers) else {
+        // 未登录账号中心：跳转到专门的账号登录页。
+        return redirect(ACCOUNT_LOGIN);
     };
-    html(view::user_guest(&mode, &flash, &prefill, note.as_deref()))
+    let flash = flash_from(&q);
+    let current_auth_id = role_session(&st, &headers)
+        .map(|(_, a)| a.id)
+        .unwrap_or_default();
+    let (auths, admin_auths) = {
+        let db = st.db.lock().unwrap();
+        let auths = db::user_auths(&db, user.id);
+        let admin_auths = auths
+            .iter()
+            .filter(|a| a.role == "admin")
+            .cloned()
+            .collect::<Vec<_>>();
+        (auths, admin_auths)
+    };
+    let prefs = user.prefs.clone();
+    let mut ctx = LayoutCtx::account(&user, &prefs, flash);
+    ctx.auth_id = current_auth_id;
+    html(view::user_account(
+        &ctx,
+        &user,
+        &auths,
+        &admin_auths,
+        &Flash::default(),
+    ))
+}
+
+pub async fn login_account_page(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Q,
+) -> Response {
+    if current_user(&st, &headers).is_some() {
+        return redirect("/user");
+    }
+    let mode = q
+        .get("mode")
+        .and_then(|m| normalize_mode(m))
+        .map(str::to_string)
+        .unwrap_or_else(|| detect_mode(&headers));
+    html(view::user_guest(&mode, &flash_from(&q), "", None))
 }
 
 pub async fn user_login(
@@ -737,17 +731,17 @@ pub async fn user_login(
 ) -> Response {
     let username = form.username.trim();
     if username.is_empty() || form.password.is_empty() {
-        return msg_redirect("/user", "err", &t("flash_enter_username_password"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_enter_username_password"));
     }
     let found = {
         let db = st.db.lock().unwrap();
         db::load_user_with_secret(&db, username)
     };
     let Some(found) = found else {
-        return msg_redirect("/user", "err", &t("flash_wrong_credentials"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_wrong_credentials"));
     };
     if !constant_time_eq(&hash_password(&found.salt, &form.password), &found.pwhash) {
-        return msg_redirect("/user", "err", &t("flash_wrong_credentials"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_wrong_credentials"));
     }
     clear_user_session(&st, &headers);
     let token = create_user_session(&st, found.user.id);
@@ -773,16 +767,16 @@ pub async fn user_register(
 ) -> Response {
     let username = form.username.trim();
     if !valid_username(username) {
-        return msg_redirect("/user", "err", &t("flash_username_invalid"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_username_invalid"));
     }
     if form.password.chars().count() < 6 {
-        return msg_redirect("/user", "err", &t("flash_password_min"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_min"));
     }
     if form.password != form.password2 {
-        return msg_redirect("/user", "err", &t("flash_password_mismatch"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_mismatch"));
     }
     if form.password.chars().count() > 128 {
-        return msg_redirect("/user", "err", &t("flash_password_too_long"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_too_long"));
     }
 
     let key = form.key.trim();
@@ -795,8 +789,8 @@ pub async fn user_register(
         };
         match found {
             Some(a) if a.user_id.is_none() => Some(a),
-            Some(_) => return msg_redirect("/user", "err", &t("flash_key_bound")),
-            None => return msg_redirect("/user", "err", &t("flash_key_invalid")),
+            Some(_) => return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_key_bound")),
+            None => return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_key_invalid")),
         }
     };
 
@@ -807,7 +801,7 @@ pub async fn user_register(
         db::register_user(&db, username, &salt, &pwhash)
     };
     let Ok(user_id) = created else {
-        return msg_redirect("/user", "err", &t("flash_username_taken"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_username_taken"));
     };
     let mut cookies = Vec::new();
     let mut target = format!("/user?ok={}", url_encode(&t("flash_account_created")));
@@ -833,7 +827,7 @@ pub async fn user_claim(
     Form(form): Form<ClaimForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     let key = form.key.trim();
     if key.is_empty() {
@@ -869,7 +863,7 @@ pub async fn user_enter(
     Form(form): Form<EnterClassForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
@@ -900,7 +894,7 @@ pub async fn user_delete_auth(
     Path(auth_id): Path<String>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
@@ -944,7 +938,7 @@ pub async fn user_prefs(
     Form(form): Form<PrefsForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     let display = form.display_name.trim();
     let display = if display.is_empty() {
@@ -979,7 +973,7 @@ pub async fn user_password(
     Form(form): Form<PasswordForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     if form.new.chars().count() < 6 {
         return msg_redirect("/user", "err", &t("flash_password_min"));
@@ -1026,7 +1020,7 @@ pub async fn user_create_class(
     Form(form): Form<ClassForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", &t("flash_need_login"));
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
@@ -1044,7 +1038,10 @@ pub async fn user_create_class(
     let db = st.db.lock().unwrap();
     match db::create_class(&db, &auth, &form.name, &form.desc) {
         Ok(_c) => msg_redirect("/user", "ok", &t("flash_class_created")),
-        Err(e) => msg_redirect("/user", "err", &e),
+        Err(e) => {
+            eprintln!("create class failed: {e}");
+            msg_redirect("/user", "err", &t("flash_class_create_failed"))
+        }
     }
 }
 

@@ -553,8 +553,11 @@ pub fn parse_duration(input: &str) -> Option<i64> {
     if s.len() < 2 {
         return None;
     }
+    if !s.is_ascii() {
+        return None;
+    }
     let unit = s.chars().last()?;
-    let num = &s[..s.len() - 1];
+    let num = &s[..s.len() - unit.len_utf8()];
     if !num.chars().all(|c| c.is_ascii_digit()) || num.is_empty() {
         return None;
     }
@@ -917,8 +920,9 @@ pub fn user_session_id(st: &AppState, headers: &HeaderMap) -> Option<i64> {
 }
 
 pub fn current_user(st: &AppState, headers: &HeaderMap) -> Option<UserCtx> {
-    let uid = user_session_id(st, headers)
-        .or_else(|| role_session(st, headers).and_then(|(_, auth)| auth.user_id))?;
+    // 账号会话（sc_uid）是唯一的 user 来源。auth 只代表班级身份，
+    // 不能用来反查/伪造已登录账号。
+    let uid = user_session_id(st, headers)?;
     let db = st.db.lock().unwrap();
     db::load_user_by_id(&db, uid)
 }

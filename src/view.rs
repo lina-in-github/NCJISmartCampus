@@ -751,11 +751,10 @@ fn auth_brand(mobile: bool) -> String {
     )
 }
 
-fn mode_switch(mode: &str, role: Option<&str>) -> String {
-    let href = |m: &str| match role {
-        Some(r) => format!("/login/{m}/{r}"),
-        None => format!("/login?mode={m}"),
-    };
+fn mode_switch_links<F>(mode: &str, href: F) -> String
+where
+    F: Fn(&str) -> String,
+{
     format!(
         r#"<div class="mode-switch" role="group" aria-label="@[strings/common_view_mode]">
   <a class="mode-pill{mob}" href="{mob_href}">{phone}@[strings/common_mobile]</a>
@@ -768,6 +767,17 @@ fn mode_switch(mode: &str, role: Option<&str>) -> String {
         phone = icon("phone"),
         desktop = icon("desktop")
     )
+}
+
+fn mode_switch(mode: &str, role: Option<&str>) -> String {
+    mode_switch_links(mode, |m| match role {
+        Some(r) => format!("/login/{m}/{r}"),
+        None => format!("/login?mode={m}"),
+    })
+}
+
+fn account_mode_switch(mode: &str) -> String {
+    mode_switch_links(mode, |m| format!("/login/account?mode={m}"))
 }
 
 fn auth_hero(kind: &str) -> String {
@@ -875,7 +885,7 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
         {admin}
       </div>
       <div class="auth-divider">@[strings/common_or]</div>
-      <a class="auth-mini-link" href="/user">{user_icon}@[strings/login_account_center]</a>
+      <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center]</a>
       {demo_keys}
       <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_footer_note]</p>
     </div>
@@ -1017,7 +1027,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
       <div class="auth-divider">@[strings/login_other_identity]</div>
       <div class="mode-switch" style="width:100%;justify-content:space-between">{role_links}</div>
       <div class="auth-divider">@[strings/common_or]</div>
-      <a class="auth-mini-link" href="/user">{user_icon}@[strings/login_account_center_link]</a>
+      <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center_link]</a>
       <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_authorized_note]</p>
     </div>
   </section>
@@ -2294,7 +2304,7 @@ pub fn user_guest(
         hero = auth_hero("account"),
         mobile_brand = auth_brand(true),
         arrow = icon("arrow-left"),
-        mode_switch = mode_switch(mode, None),
+        mode_switch = account_mode_switch(mode),
         flash = flash_html(flash),
         note = note,
         lock = icon("lock"),

@@ -136,11 +136,31 @@ assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE
 curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的身份" || fail "登录页缺少身份选择"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
+echo "==> 账号入口与角色身份隔离"
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/user")" "303" "未登录访问账号中心"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' "$BASE/user")" "$BASE/login/account" "未登录账号中心跳转登录页"
+if grep -q 'sc_uid' "$TMP/tea-cookie"; then fail "角色登录不应建立账号会话 sc_uid"; fi
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/user")" "303" "仅角色身份访问账号中心"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$BASE/user")" "$BASE/login/account" "角色身份不反查账号"
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login/account")" "200" "账号登录页可直接访问"
+ACCOUNT_LOGIN_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/login/account")"
+grep -q "账号中心" <<<"$ACCOUNT_LOGIN_HTML" || fail "账号登录页未渲染"
+if grep -q '@\[strings/' <<<"$ACCOUNT_LOGIN_HTML"; then fail "账号登录页存在未替换的字符串标签"; fi
+
 echo "==> 账号中心表单（用户 / 偏好 / 密码 / 删除身份）"
 USER_COOKIE="$TMP/user-cookie"
 assert_eq "$(curl -sS -c "$USER_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'username=student&password=student123' "$BASE/user/login")" "303" "账号登录"
 USER_HTML="$(curl -sS -b "$USER_COOKIE" "$BASE/user")"
 grep -q "我的班级身份" <<<"$USER_HTML" || fail "账号中心未渲染"
+grep -q "陈小满" <<<"$USER_HTML" || fail "账号中心未显示账号本人"
+
+# 账号会话与角色会话同时存在时，/user 只看 sc_uid，不能串到角色绑定的用户。
+MIXED_COOKIE="$TMP/mixed-cookie"
+curl -sS -c "$MIXED_COOKIE" -o /dev/null -X POST -d 'username=student&password=student123' "$BASE/user/login"
+curl -sS -c "$MIXED_COOKIE" -b "$MIXED_COOKIE" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
+MIXED_HTML="$(curl -sS -b "$MIXED_COOKIE" "$BASE/user")"
+grep -q "陈小满" <<<"$MIXED_HTML" || fail "混合会话下账号中心未显示账号本人"
+if grep -q "林书言" <<<"$MIXED_HTML"; then fail "混合会话下账号中心被角色身份覆盖"; fi
 
 REG_COOKIE="$TMP/reg-cookie"
 assert_eq "$(curl -sS -c "$REG_COOKIE" -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
@@ -165,7 +185,9 @@ assert_jq "$RENAME_T" ".ok == true and .name == \"$NEW_TEACHER_NAME\"" "rename-a
 ALL_RENAMED="$(post /api/all-submission "{\"auth\":\"$TEACHER\",\"match_mode\":\"All\"}")"
 assert_jq "$ALL_RENAMED" ".datas[] | select(.id == \"$SUB\") | .createdBy == \"$NEW_TEACHER_NAME\"" "改名同步征集发布者"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "$NEW_TEACHER_NAME" || fail "老师空间未显示新名称"
-ACCOUNT_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/user")"
+TEA_USER_COOKIE="$TMP/tea-user-cookie"
+assert_eq "$(curl -sS -c "$TEA_USER_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'username=teacher&password=teacher123' "$BASE/user/login")" "303" "老师账号登录"
+ACCOUNT_HTML="$(curl -sS -b "$TEA_USER_COOKIE" "$BASE/user")"
 grep -q 'data-rename=' <<<"$ACCOUNT_HTML" || fail "账号中心缺少改名入口"
 if grep -q '@\[strings/' <<<"$ACCOUNT_HTML"; then fail "账号中心存在未替换的字符串标签"; fi
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$UP/" | grep -q "$NEW_TEACHER_NAME" || fail "改名未同步历史回复人"
