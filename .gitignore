@@ -1,1 +1,8 @@
 /target
+/smartcampus.db
+/smartcampus.db-shm
+/smartcampus.db-wal
+/smartcampus.db-journal
+/.test/
+/check.log
+/sc-test.db*

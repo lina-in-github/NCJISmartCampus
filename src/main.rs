@@ -2,45 +2,150 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    routing::{get, post}, Router,
+    extract::DefaultBodyLimit,
+    http::{header, Uri},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Router,
 };
-use rusqlite::Connection;
-//use sha2::Digest;
 
-use crate::route::{ index, login, logout, me_page, raw_page, register, save_page};
-use crate::types::{AppState, SCHEMA};
-mod types;
+use crate::types::AppState;
+
+mod api;
+mod db;
+mod pages;
 mod tools;
-mod route;
+mod types;
+mod view;
 
+const FAVICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/>
+</linearGradient></defs>
+<rect width="64" height="64" rx="16" fill="url(#g)"/>
+<path d="m12 26 20-9 20 9-20 9Z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+<path d="M19 30v9c0 4 5.8 7 13 7s13-3 13-7v-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+<path d="M52 26v12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+</svg>"##;
 
+async fn static_css() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("assets/app.css"),
+    )
+        .into_response()
+}
 
+async fn static_js() -> Response {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        include_str!("assets/app.js"),
+    )
+        .into_response()
+}
+
+async fn favicon() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        FAVICON,
+    )
+        .into_response()
+}
+
+async fn fallback(uri: Uri) -> Response {
+    if uri.path().starts_with("/api/") {
+        return tools::api_not_found("接口不存在");
+    }
+    view::not_found(None, "你访问的页面不存在或已被移动。")
+}
 
 #[tokio::main]
 async fn main() {
-    let conn = Connection::open("app.db").expect("无法打开数据库");
-    conn.execute_batch(SCHEMA).expect("初始化数据表失败");
+    let db_path = std::env::var("SC_DB").unwrap_or_else(|_| "smartcampus.db".to_string());
+    let conn = db::open(&db_path).expect("初始化数据库失败");
 
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        user_sessions: Arc::new(Mutex::new(HashMap::new())),
     };
-    
 
     let app = Router::new()
-        .route("/", get(index))
-        .route("/login", post(login))
-        .route("/register", post(register))
-        .route("/logout", post(logout))
-        .route("/me", get(me_page))
-        .route("/page", get(raw_page))
+        .route("/", get(pages::root))
+        .route("/login", get(pages::login_index))
+        .route(
+            "/login/{mode}/{role}",
+            get(pages::login_page).post(pages::login_submit),
+        )
+        .route("/logout", post(pages::logout))
+        .route("/home", get(pages::home_entry))
+        .route("/home/{mode}/{role}", get(pages::home_index))
+        .route("/home/{mode}/{role}/", get(pages::home_slash))
+        .route("/home/{mode}/{role}/{*rest}", get(pages::home_wild))
+        .route("/user", get(pages::user_page))
+        .route("/user/login", post(pages::user_login))
+        .route("/user/register", post(pages::user_register))
+        .route("/user/claim", post(pages::user_claim))
+        .route("/user/enter", post(pages::user_enter))
+        .route("/user/auth/{id}/delete", post(pages::user_delete_auth))
+        .route("/user/prefs", post(pages::user_prefs))
+        .route("/user/password", post(pages::user_password))
+        .route("/user/class", post(pages::user_create_class))
+        .route("/user/logout", post(pages::user_logout))
+        .route("/api/upload", post(api::upload))
+        .route("/api/download", post(api::download))
+        .route("/api/new-submission", post(api::new_submission))
+        .route("/api/all-submission", post(api::all_submission))
+        .route("/api/reply", post(api::reply))
+        .route("/api/new-class", post(api::new_class))
+        .route("/api/new-user", post(api::new_user))
+        .route("/api/del-key", post(api::del_key))
+        .route("/api/del-object", post(api::del_object))
+        .route("/api/health", get(api::health))
+        .route("/static/app.css", get(static_css))
+        .route("/static/app.js", get(static_js))
+        .route("/favicon.svg", get(favicon))
+        .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+        .fallback(fallback)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("[::]:3000")
+    let port: u16 = std::env::var("SC_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
+    let bind = std::env::var("SC_BIND").unwrap_or_else(|_| format!("0.0.0.0:{port}"));
+    let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .expect("端口绑定失败");
+    let display = if let Some(rest) = bind.strip_prefix("0.0.0.0:") {
+        format!("localhost:{rest}")
+    } else if let Some(rest) = bind.strip_prefix("[::]:") {
+        format!("localhost:{rest}")
+    } else {
+        bind.clone()
+    };
 
-    println!("服务器已启动: http://localhost:3000");
+    println!("智慧校园 · Campus OS");
+    println!("  地址   : http://{display}");
+    println!("  数据库 : {db_path}");
+    println!(
+        "  演示   : 角色密钥 {} / {} / {}",
+        db::DEMO_ADMIN_KEY,
+        db::DEMO_TEACHER_KEY,
+        db::DEMO_STUDENT_KEY
+    );
+    println!("          账号 admin/admin123 · teacher/teacher123 · student/student123");
     axum::serve(listener, app).await.expect("服务器运行失败");
 }
-

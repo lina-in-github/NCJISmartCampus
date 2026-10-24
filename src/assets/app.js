@@ -1,0 +1,751 @@
+/* 智慧校园 · 前端交互（无第三方依赖） */
+(function () {
+  "use strict";
+
+  var SC = window.SC || {};
+  var root = document.documentElement;
+  var THEME_KEY = "sc-theme";
+
+  // ---------------------------------------------------------------------
+  // 基础工具
+  // ---------------------------------------------------------------------
+
+  function $(sel, ctx) {
+    return (ctx || document).querySelector(sel);
+  }
+
+  function $$(sel, ctx) {
+    return Array.prototype.slice.call((ctx || document).querySelectorAll(sel));
+  }
+
+  var ICONS = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
+  };
+
+  function toast(message, type) {
+    var wrap = $(".toast-wrap");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.className = "toast-wrap";
+      document.body.appendChild(wrap);
+    }
+    var el = document.createElement("div");
+    el.className = "toast " + (type === "error" ? "err" : "ok");
+    el.innerHTML = (type === "error" ? ICONS.err : ICONS.ok) + "<span></span>";
+    el.querySelector("span").textContent = message;
+    wrap.appendChild(el);
+    setTimeout(function () {
+      el.classList.add("leaving");
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 260);
+    }, 3800);
+  }
+
+  async function api(path, body) {
+    var res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(body || {})
+    });
+    var data = {};
+    try {
+      data = await res.json();
+    } catch (e) {
+      /* ignore */
+    }
+    if (!res.ok || data.ok === false) {
+      var msg = data.msg || data.message || "请求失败（HTTP " + res.status + "）";
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function setLoading(btn, loading, text) {
+    if (!btn) return;
+    if (loading) {
+      btn.dataset.originalText = btn.innerHTML;
+      btn.classList.add("loading");
+      btn.disabled = true;
+      if (text) btn.textContent = text;
+    } else {
+      btn.classList.remove("loading");
+      btn.disabled = false;
+      if (btn.dataset.originalText) btn.innerHTML = btn.dataset.originalText;
+      delete btn.dataset.originalText;
+    }
+  }
+
+  function copyText(text) {
+    if (!text) return Promise.resolve(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(
+        function () {
+          toast("已复制", "ok");
+          return true;
+        },
+        function () {
+          return fallbackCopy(text);
+        }
+      );
+    }
+    return fallbackCopy(text);
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    if (ok) toast("已复制", "ok");
+    else toast("复制失败，请手动选择", "error");
+    return Promise.resolve(ok);
+  }
+
+  function formatBytes(n) {
+    if (!n) return "0 B";
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+    if (n >= 1024) return Math.round(n / 1024) + " KB";
+    return n + " B";
+  }
+
+  function confirmAction(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var d = $("#confirm-dialog");
+      if (!d || typeof d.showModal !== "function") {
+        resolve(window.confirm(opts.message || opts.title || "确认操作？"));
+        return;
+      }
+      d.querySelector("[data-dialog-title]").textContent = opts.title || "确认操作";
+      d.querySelector("[data-dialog-msg]").textContent = opts.message || "";
+      var ok = d.querySelector("[data-dialog-confirm]");
+      if (ok) {
+        ok.textContent = opts.confirmText || "确定";
+        ok.className = "btn " + (opts.danger === false ? "primary" : "danger");
+      }
+      function onClose() {
+        d.removeEventListener("close", onClose);
+        resolve(d.returnValue === "ok");
+      }
+      d.addEventListener("close", onClose);
+      d.returnValue = "cancel";
+      d.showModal();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 主题
+  // ---------------------------------------------------------------------
+
+  function applyTheme(theme) {
+    root.dataset.theme = theme === "dark" ? "dark" : "light";
+    try {
+      localStorage.setItem(THEME_KEY, root.dataset.theme);
+    } catch (e) {
+      /* ignore */
+    }
+    var btn = $("#theme-toggle");
+    if (btn) {
+      btn.setAttribute(
+        "aria-label",
+        root.dataset.theme === "dark" ? "切换到浅色模式" : "切换到深色模式"
+      );
+    }
+  }
+
+  var themeBtn = $("#theme-toggle");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", function () {
+      applyTheme(root.dataset.theme === "dark" ? "light" : "dark");
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Flash / toast / lightbox
+  // ---------------------------------------------------------------------
+
+  $$("[data-flash-close]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var flash = btn.closest(".flash");
+      if (flash) flash.remove();
+    });
+  });
+
+  $$(".flash").forEach(function (el) {
+    setTimeout(function () {
+      el.style.transition = "opacity .3s, transform .3s";
+      el.style.opacity = "0";
+      el.style.transform = "translateY(-4px)";
+      setTimeout(function () {
+        el.remove();
+      }, 320);
+    }, 6000);
+  });
+
+  document.addEventListener("click", function (e) {
+    var copyBtn = e.target.closest("[data-copy]");
+    if (copyBtn) {
+      e.preventDefault();
+      var value = copyBtn.getAttribute("data-copy");
+      if (!value) {
+        var key = copyBtn.closest(".auth-row, .member-key-row, .demo-keys");
+        var keyEl = key && key.querySelector(".key, code");
+        value = keyEl && (keyEl.getAttribute("data-full") || keyEl.textContent);
+      }
+      copyText(value);
+      return;
+    }
+
+    var revealBtn = e.target.closest("[data-reveal]");
+    if (revealBtn) {
+      e.preventDefault();
+      var row = revealBtn.closest(".auth-row");
+      var keyEl = row && row.querySelector(".key");
+      if (keyEl) {
+        var full = keyEl.getAttribute("data-full") || "";
+        var masked = keyEl.getAttribute("data-mask") || "······";
+        var on = keyEl.dataset.revealed === "1";
+        keyEl.textContent = on ? masked : full;
+        keyEl.dataset.revealed = on ? "0" : "1";
+        revealBtn.textContent = on ? "显示" : "隐藏";
+      }
+      return;
+    }
+
+    var lightboxTrigger = e.target.closest("[data-lightbox]");
+    if (lightboxTrigger) {
+      e.preventDefault();
+      var img = lightboxTrigger.querySelector("img");
+      var dlg = $("#lightbox");
+      if (img && dlg && typeof dlg.showModal === "function") {
+        dlg.querySelector("img").src = img.src;
+        dlg.querySelector("[data-lightbox-name]").textContent =
+          lightboxTrigger.getAttribute("data-name") || "附件预览";
+        dlg.showModal();
+      }
+      return;
+    }
+
+    var delBtn = e.target.closest("[data-del]");
+    if (delBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      var id = delBtn.getAttribute("data-del");
+      var name = delBtn.getAttribute("data-name") || "该对象";
+      confirmAction({
+        title: "删除确认",
+        message: "确定删除「" + name + "」吗？此操作不可撤销。",
+        confirmText: "删除",
+        danger: true
+      }).then(function (ok) {
+        if (!ok) return;
+        setLoading(delBtn, true);
+        api("/api/del-object", { auth: SC.auth, id: id })
+          .then(function () {
+            toast("已删除", "ok");
+            var redirect = delBtn.getAttribute("data-redirect");
+            if (redirect) {
+              setTimeout(function () {
+                location.href = redirect;
+              }, 350);
+            } else {
+              setTimeout(function () {
+                location.reload();
+              }, 400);
+            }
+          })
+          .catch(function (err) {
+            setLoading(delBtn, false);
+            toast(err.message, "error");
+          });
+      });
+      return;
+    }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var trigger = e.target.closest("[data-lightbox]");
+    if (!trigger) return;
+    e.preventDefault();
+    trigger.click();
+  });
+
+  var lightbox = $("#lightbox");
+  if (lightbox) {
+    lightbox.addEventListener("click", function (e) {
+      if (e.target === lightbox) lightbox.close();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 表单确认（用于 /user 下常规 POST 表单）
+  // ---------------------------------------------------------------------
+
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.matches("form[data-confirm]")) return;
+    if (form.dataset.confirmed === "1") return;
+    e.preventDefault();
+    confirmAction({
+      title: "确认操作",
+      message: form.getAttribute("data-confirm"),
+      confirmText: form.getAttribute("data-confirm-text") || "确定",
+      danger: form.getAttribute("data-confirm-danger") !== "0"
+    }).then(function (ok) {
+      if (ok) {
+        form.dataset.confirmed = "1";
+        form.submit();
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 登录页：演示密钥快速填充
+  // ---------------------------------------------------------------------
+
+  $$("[data-demo-key]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var input = $("#key-input");
+      if (input) {
+        input.value = btn.getAttribute("data-demo-key");
+        input.focus();
+        toast("已填入演示密钥，点击登录即可", "ok");
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 新建征集
+  // ---------------------------------------------------------------------
+
+  var submissionForm = $("#submission-form");
+  if (submissionForm) {
+    var noDeadline = $("#no-deadline");
+    var deadlineInput = $("#sub-deadline");
+    function syncDeadline() {
+      if (!deadlineInput || !noDeadline) return;
+      deadlineInput.disabled = noDeadline.checked;
+      deadlineInput.style.opacity = noDeadline.checked ? ".45" : "1";
+    }
+    if (noDeadline) {
+      noDeadline.addEventListener("change", syncDeadline);
+      syncDeadline();
+    }
+
+    submissionForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = $("#submission-submit");
+      var name = $("#sub-name").value.trim();
+      var desc = $("#sub-desc").value.trim();
+      var kind = $("#sub-type").value;
+      var deadline = noDeadline && noDeadline.checked ? null : deadlineInput.value;
+      if (!name) {
+        toast("请填写征集名称", "error");
+        $("#sub-name").focus();
+        return;
+      }
+      setLoading(btn, true, "发布中…");
+      try {
+        var r = await api("/api/new-submission", {
+          auth: SC.auth,
+          name: name,
+          desc: desc,
+          type: kind,
+          deadLine: deadline ? deadline : null
+        });
+        toast("征集已发布", "ok");
+        setTimeout(function () {
+          location.href = SC.home + "submissions/?ok=" + encodeURIComponent("征集已发布");
+        }, 300);
+        void r;
+      } catch (err) {
+        setLoading(btn, false);
+        toast(err.message, "error");
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 上传表单
+  // ---------------------------------------------------------------------
+
+  var uploadForm = $("#upload-form");
+  if (uploadForm) {
+    var fileInput = $("#file-input");
+    var fileList = $("#file-list");
+    var dropzone = $("#dropzone");
+    var picked = [];
+    var MAX_FILES = 8;
+    var MAX_TOTAL = 18 * 1024 * 1024;
+
+    function totalBytes() {
+      return picked.reduce(function (sum, f) {
+        return sum + (f.size || Math.floor((f.data.length * 3) / 4));
+      }, 0);
+    }
+
+    function iconSvg(kind) {
+      if (kind === "image") {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-4.5-4.5L7 20"/></svg>';
+      }
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>';
+    }
+
+    function renderFiles() {
+      if (!fileList) return;
+      fileList.innerHTML = "";
+      picked.forEach(function (f, i) {
+        var item = document.createElement("div");
+        item.className = "file-item";
+        var preview = document.createElement("div");
+        preview.className = "file-preview";
+        if (f.preview) {
+          var img = document.createElement("img");
+          img.src = f.preview;
+          img.alt = "";
+          preview.appendChild(img);
+        } else {
+          preview.innerHTML = iconSvg("file");
+        }
+        var meta = document.createElement("div");
+        meta.className = "file-meta";
+        var strong = document.createElement("strong");
+        strong.textContent = f.name;
+        var span = document.createElement("span");
+        span.textContent = formatBytes(f.size) + " · " + f.mime;
+        meta.appendChild(strong);
+        meta.appendChild(span);
+        var rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "file-remove";
+        rm.setAttribute("aria-label", "移除文件");
+        rm.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+        rm.addEventListener("click", function () {
+          picked.splice(i, 1);
+          renderFiles();
+        });
+        item.appendChild(preview);
+        item.appendChild(meta);
+        item.appendChild(rm);
+        fileList.appendChild(item);
+      });
+    }
+
+    function readFile(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var result = String(reader.result || "");
+          var comma = result.indexOf(",");
+          var base64 = comma >= 0 ? result.slice(comma + 1) : "";
+          var mime = file.type || "application/octet-stream";
+          resolve({
+            name: file.name,
+            mime: mime,
+            data: base64,
+            size: file.size,
+            preview: mime.indexOf("image/") === 0 ? result : ""
+          });
+        };
+        reader.onerror = function () {
+          reject(new Error("读取文件失败：" + file.name));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function addFiles(files) {
+      var list = Array.prototype.slice.call(files || []);
+      if (!list.length) return;
+      if (picked.length >= MAX_FILES) {
+        toast("最多上传 " + MAX_FILES + " 个附件", "error");
+        return;
+      }
+      for (var i = 0; i < list.length; i++) {
+        if (picked.length >= MAX_FILES) {
+          toast("已达到附件数量上限（" + MAX_FILES + " 个）", "error");
+          break;
+        }
+        var file = list[i];
+        if (file.size + totalBytes() > MAX_TOTAL) {
+          toast("附件总大小不能超过 18MB", "error");
+          continue;
+        }
+        try {
+          picked.push(await readFile(file));
+          renderFiles();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      }
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        addFiles(fileInput.files).then(function () {
+          fileInput.value = "";
+        });
+      });
+    }
+
+    if (dropzone) {
+      ["dragenter", "dragover"].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault();
+          dropzone.classList.add("drag");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (ev) {
+        dropzone.addEventListener(ev, function (e) {
+          e.preventDefault();
+          dropzone.classList.remove("drag");
+        });
+      });
+      dropzone.addEventListener("drop", function (e) {
+        if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files);
+      });
+    }
+
+    uploadForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = $("#upload-submit");
+      var title = $("#upload-title").value.trim();
+      var desc = $("#upload-desc").value.trim();
+      var submission = uploadForm.getAttribute("data-submission");
+      if (!title) {
+        toast("请填写上传标题", "error");
+        $("#upload-title").focus();
+        return;
+      }
+      if (!submission) {
+        toast("缺少征集信息", "error");
+        return;
+      }
+      setLoading(btn, true, "提交中…");
+      try {
+        var r = await api("/api/upload", {
+          auth: SC.auth,
+          which: submission,
+          title: title,
+          desc: desc,
+          data: picked.map(function (f) {
+            return { name: f.name, mime: f.mime, data: f.data };
+          })
+        });
+        toast("上传成功", "ok");
+        setTimeout(function () {
+          location.href =
+            SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent("上传成功");
+        }, 300);
+      } catch (err) {
+        setLoading(btn, false);
+        toast(err.message, "error");
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 回复
+  // ---------------------------------------------------------------------
+
+  $$("[data-quick-reply]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var form = btn.closest(".panel-body, form") || document;
+      var ta = form.querySelector("textarea");
+      if (ta) {
+        ta.value = btn.getAttribute("data-quick-reply");
+        ta.focus();
+      }
+    });
+  });
+
+  $$("form[data-reply-form]").forEach(function (form) {
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = form.querySelector("button[type=submit]");
+      var ta = form.querySelector("textarea");
+      var content = (ta.value || "").trim();
+      var upload = form.getAttribute("data-upload");
+      if (!content) {
+        toast("回复内容不能为空", "error");
+        ta.focus();
+        return;
+      }
+      setLoading(btn, true, "发送中…");
+      try {
+        await api("/api/reply", { auth: SC.auth, uploadID: upload, content: content });
+        toast("回复已发布", "ok");
+        setTimeout(function () {
+          var url = new URL(location.href);
+          url.searchParams.set("ok", "回复已发布");
+          location.href = url.toString();
+        }, 300);
+      } catch (err) {
+        setLoading(btn, false);
+        toast(err.message, "error");
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // 导出征集数据（teacher/admin）
+  // ---------------------------------------------------------------------
+
+  var exportBtn = $("#export-btn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", async function () {
+      var submission = exportBtn.getAttribute("data-submission");
+      var name = exportBtn.getAttribute("data-name") || "submission";
+      setLoading(exportBtn, true, "导出中…");
+      try {
+        var data = await api("/api/download", {
+          auth: SC.auth,
+          which: submission,
+          match_mode: "All"
+        });
+        var blob = new Blob([JSON.stringify(data.datas, null, 2)], {
+          type: "application/json;charset=utf-8"
+        });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = name + "-uploads.json";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+          a.remove();
+        }, 500);
+        toast("已导出 " + (data.datas ? data.datas.length : 0) + " 条数据", "ok");
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        setLoading(exportBtn, false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 账号中心：偏好设置 / 生成成员密钥
+  // ---------------------------------------------------------------------
+
+  var prefTheme = $("#pref-theme");
+  var prefForm = $("#prefs-form");
+  if (prefForm && prefTheme) {
+    prefForm.addEventListener("submit", function () {
+      try {
+        var v = prefTheme.value;
+        if (v === "system") localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, v);
+      } catch (e) {
+        /* ignore */
+      }
+    });
+  }
+
+  var memberForm = $("#member-form");
+  if (memberForm) {
+    memberForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var btn = memberForm.querySelector("button[type=submit]");
+      var adminSelect = $("#member-admin");
+      var option = adminSelect && adminSelect.options[adminSelect.selectedIndex];
+      var kind = $("#member-kind").value;
+      var quantity = parseInt($("#member-quantity").value, 10);
+      var result = $("#member-result");
+      if (!option) {
+        toast("请选择管理员身份", "error");
+        return;
+      }
+      if (!quantity || quantity < 1 || quantity > 100) {
+        toast("数量需在 1–100 之间", "error");
+        return;
+      }
+      setLoading(btn, true, "生成中…");
+      try {
+        var data = await api("/api/new-user", {
+          auth: option.value,
+          classID: option.getAttribute("data-class"),
+          quantity: quantity,
+          type: kind
+        });
+        if (result) {
+          result.hidden = false;
+          var title = document.createElement("h4");
+          title.textContent = "本次生成 " + data.keys.length + " 个密钥（请妥善保存，仅显示一次）";
+          var list = document.createElement("div");
+          list.className = "member-keys";
+          (data.members || []).forEach(function (m) {
+            var row = document.createElement("div");
+            row.className = "member-key-row";
+            var tag = document.createElement("span");
+            tag.textContent = m.displayName + " · " + m.role;
+            var code = document.createElement("code");
+            code.textContent = m.key;
+            var copy = document.createElement("button");
+            copy.type = "button";
+            copy.className = "btn ghost sm";
+            copy.textContent = "复制";
+            copy.setAttribute("data-copy", m.key);
+            row.appendChild(tag);
+            row.appendChild(code);
+            row.appendChild(copy);
+            list.appendChild(row);
+          });
+          var all = document.createElement("button");
+          all.type = "button";
+          all.className = "btn outline sm";
+          all.style.marginTop = "10px";
+          all.textContent = "复制全部";
+          all.addEventListener("click", function () {
+            copyText(data.keys.join("\n"));
+          });
+          result.innerHTML = "";
+          result.appendChild(title);
+          result.appendChild(list);
+          result.appendChild(all);
+        }
+        toast("已生成 " + data.keys.length + " 个密钥", "ok");
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        setLoading(btn, false);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // 表单里的字数提示
+  // ---------------------------------------------------------------------
+
+  $$("[data-counter]").forEach(function (el) {
+    var target = document.getElementById(el.getAttribute("data-counter"));
+    if (!target) return;
+    var max = parseInt(el.getAttribute("data-max") || "0", 10);
+    function update() {
+      var len = (target.value || "").length;
+      el.textContent = max ? len + " / " + max : String(len);
+      el.classList.toggle("over", max > 0 && len > max);
+    }
+    target.addEventListener("input", update);
+    update();
+  });
+
+  // ---------------------------------------------------------------------
+  // 轻提示：URL 中的 ok / err 已经由服务端渲染为 flash
+  // ---------------------------------------------------------------------
+
+  if (SC.flashError) toast(SC.flashError, "error");
+})();

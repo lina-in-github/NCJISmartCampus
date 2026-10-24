@@ -1,7 +1,8 @@
 [package]
-name = "server_test"
+name = "smart-campus"
 version = "0.1.0"
 edition = "2021"
+description = "智慧校园 · 班级征集、提交与回复平台"
 
 [dependencies]
 axum = "0.8"
