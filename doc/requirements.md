@@ -157,3 +157,15 @@ v0.1.1新增：
     name:str
 }
 返回：success/fail
+---
+v0.1.2:
+把所有UI字符串移到zh-CN.txt;api中使用英语。
+zh-CN.txt示例：
+name=title lines=0 content=智慧校园
+name=admin_slogan lines=2 content=
+让班级的每件事，
+都有迹可循
+...
+在服务器启动时读取strings项目，如有变化同步到strings.db。
+自动替换形如@[strings/title]的标签。
+strings应当可作为{}格式化的参数

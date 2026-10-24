@@ -6,7 +6,8 @@
 - 数据库：SQLite，首次启动自动建表并写入演示数据
 - 需求来源：[`doc/requirements.md`](doc/requirements.md)
 - 完整 API 文档：[`doc/api.md`](doc/api.md)
-- 当前版本：**v0.1.1** — 新增身份改名 `/api/rename-auth` 与账号中心改名入口
+- 当前版本：**v0.1.2** — UI 文案集中到 `strings/zh-CN.txt`，API 文案改为英文
+- 历史版本：v0.1.1 新增身份改名 `/api/rename-auth` 与账号中心改名入口
 
 ---
 
@@ -19,7 +20,7 @@ cargo run
 # 打开 http://localhost:3000
 ```
 
-首次启动会在当前目录创建 `smartcampus.db` 并写入演示班级、征集、提交和回复。删除该文件即可重新生成演示数据。
+首次启动会在当前目录创建 `smartcampus.db` 并写入演示班级、征集、提交和回复；同时读取 `strings/*.txt`、同步到 `strings.db`。删除 `smartcampus.db` 即可重新生成演示数据。
 
 ### 环境变量
 
@@ -28,6 +29,9 @@ cargo run
 | `SC_DB` | `smartcampus.db` | SQLite 数据库路径 |
 | `SC_PORT` | `3000` | 监听端口（用于日志中的地址展示） |
 | `SC_BIND` | `0.0.0.0:<SC_PORT>` | 完整监听地址，例如 `127.0.0.1:3000` |
+| `SC_STRINGS_DIR` | `strings` | UI 字符串目录，启动时读取其中的 `*.txt` |
+| `SC_STRINGS_DB` | `strings.db` | 字符串同步数据库 |
+| `SC_LANG` | `zh-CN` | 运行时选择的语言（对应 `strings/<lang>.txt`） |
 
 ```bash
 SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
@@ -89,6 +93,8 @@ SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 
 所有接口为 `POST`，请求与响应均为 JSON（`Content-Type: application/json`）。角色密钥通过请求体的 `auth` 字段传递；`/api/del-object` 可按需求只传 `id`，此时回退使用登录 cookie 鉴权。
 
+> **语言约定（v0.1.2）**：API 字段、错误与 `msg` 使用英文；页面 UI 文案全部来自 `strings/zh-CN.txt`。
+
 | 接口 | 权限 | 说明 |
 | --- | --- | --- |
 | `/api/upload` | 任意身份 | 上传提交（标题、说明、base64 附件） |
@@ -99,7 +105,7 @@ SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 | `/api/new-class` | 管理员 | 创建班级（自动生成一个绑定到当前用户的管理员密钥） |
 | `/api/new-user` | 管理员 | 在本班批量生成成员密钥 |
 | `/api/del-key` | 任意身份 | 删除当前 `auth` 密钥 |
-| `/api/rename-auth` | 任意身份 | 修改当前 `auth` 的显示名称（v0.1.1） |
+| `/api/rename-auth` | 任意身份 | 修改当前 `auth` 的显示名称（v0.1.1 新增） |
 | `/api/del-object` | 管理员 | 按 id 删除征集 / 提交 / 回复 / 班级 / auth |
 | `/api/health` | 公开 | 健康检查（额外提供） |
 
@@ -195,6 +201,30 @@ users  1 ─── n  auths  n ─── 1  classes
 
 也支持显式对象写法 `{"type":"Random","quantity":3}`，`Before` 接受 ISO 时间或 `7d`/`12h`/`30m` 相对时长。`TitleReGex` 对上传标题（`/api/download`）或征集名称（`/api/all-submission`）做正则匹配；`Before` 对提交时间或截止时间做过滤。
 
+### 4.7 本地化字符串（v0.1.2）
+
+所有页面 UI 文案集中在 [`strings/zh-CN.txt`](strings/zh-CN.txt)，格式为：
+
+```txt
+name=title lines=0 content=智慧校园
+name=admin_slogan lines=2 content=
+让班级的每件事，
+都有迹可循
+```
+
+- `lines=0`：内容写在 `content=` 同行；
+- `lines=N`：`content=` 后可为空，随后 N 行即内容（保留换行）；
+- 启动时读取 `strings/` 下所有 `*.txt`，与 `strings.db` 比较并同步：新增/修改的 key 写入，文件中已删除的 key 从数据库删除；
+- `strings.db` 是生成文件（已加入 `.gitignore`），每次启动自动同步，不需要手工维护；
+- 页面 HTML 支持 `@[strings/key]` 标签，渲染完成后自动替换；缺失 key 会保留原标签，便于排查；
+- 动态文案使用 `{}` 占位符：
+  - Rust：`strings::t("key")` 返回 `String`，可直接作为 `format!` 的参数；含占位符时用 `strings::f1("key", arg)` / `f2`；
+  - 前端：`S("key", arg, ...)`，按顺序替换 `{}`；`{{` / `}}` 表示字面量花括号；
+- 页面渲染中的静态标签可带 HTML（如 `<br>`、`<em>`），替换时原样插入；
+- 需要新语言时增加 `strings/en-US.txt`，并用 `SC_LANG=en-US` 启动即可（缺失 key 回退 `zh-CN`）。
+
+API 不使用该字符串库：API 的错误与成功消息统一为英文。
+
 ---
 
 ## 5. 界面
@@ -213,11 +243,11 @@ users  1 ─── n  auths  n ─── 1  classes
 ## 6. 测试
 
 ```bash
-cargo test          # 时间/编码/MatchMode/附件/改名校验/数据库种子/建班与成员等单元测试
-./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程
+cargo test          # 时间/编码/MatchMode/附件/改名校验/字符串解析同步/数据库种子等单元测试
+./scripts/smoke.sh  # 启动临时服务并在真实 HTTP 层跑一遍主流程（依赖 sqlite3）
 ```
 
-`scripts/smoke.sh` 会在临时 SQLite 上验证登录、发布征集、上传、下载、匹配模式、回复、权限拒绝、创建班级/成员、删除密钥与删除对象，并自动清理进程与数据。
+`scripts/smoke.sh` 会在临时 SQLite 上验证字符串同步、页面无未替换标签、登录、发布征集、上传、下载、匹配模式、回复、权限拒绝、创建班级/成员、删除密钥与删除对象，并自动清理进程与数据。
 
 ---
 
@@ -229,17 +259,20 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/数据库种�
 ├── doc/
 │   ├── requirements.md     # 原始需求
 │   └── api.md              # API 参考
+├── strings/
+│   └── zh-CN.txt           # 简体中文 UI 文案（启动时同步到 strings.db）
 ├── scripts/
 │   └── smoke.sh            # HTTP 冒烟测试
 └── src/
     ├── main.rs             # 路由与启动
     ├── schema.sql          # SQLite 表结构
+    ├── strings.rs          # 字符串解析、strings.db 同步、标签/格式化
     ├── db.rs               # 数据库访问、建班/成员、演示数据
     ├── types.rs            # 状态、模型、请求/表单
     ├── tools.rs            # 时间、base64、转义、会话、MatchMode
-    ├── api.rs              # /api/* 处理
+    ├── api.rs              # /api/* 处理（英文消息）
     ├── pages.rs            # 页面路由、账号中心动作
-    ├── view.rs             # 服务端 HTML 渲染
+    ├── view.rs             # 服务端 HTML 渲染（@[strings/key] 标签）
     └── assets/
         ├── app.css         # 响应式设计系统
         └── app.js          # 上传、回复、删除、主题等交互
@@ -255,6 +288,7 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/数据库种�
 - 没有分页；演示数据与班级规模下足够，数据量增大后应在 `/api/download`、提交列表与账号页增加游标分页。
 - `/api/new-user` 生成的密钥只返回一次，请管理员妥善保存；重新发放会创建新密钥。
 - 演示密钥、演示账号仅用于本地体验，部署前请删除数据库或替换种子数据。
+- `strings.db` 只保存 UI 文案，不包含用户数据；`strings/` 缺失或格式错误时服务会拒绝启动，以避免页面显示未翻译文本。
 
 ---
 
@@ -274,6 +308,10 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/数据库种�
 | `/home/*/admin` 全部页面与删除能力 | ✅ |
 | `/user` 偏好、新增班级、增减 auth | ✅ |
 | v0.1.1 为某个 auth 改名 | ✅ `/api/rename-auth` + 账号中心改名入口 |
+| v0.1.2 全部 UI 字符串移至 `zh-CN.txt` | ✅ `strings/zh-CN.txt` + 启动同步 `strings.db` |
+| v0.1.2 API 使用英文 | ✅ API 字段/错误/消息为英文 |
+| v0.1.2 自动替换 `@[strings/key]` 标签 | ✅ HTML 渲染后统一替换 |
+| v0.1.2 字符串支持 `{}` 格式化 | ✅ Rust `t/f1/f2` + JS `S()` |
 | 「以班级为单位 / 学生以自身为单位」 | ✅ 服务端数据范围隔离 |
 
 祝使用愉快。🎓

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 智慧校园 · HTTP 冒烟测试
-# 依赖：bash、curl、jq、cargo。会在临时数据库上启动独立服务，结束后自动清理。
+# 依赖：bash、curl、jq、sqlite3、cargo。会在临时数据库上启动独立服务，结束后自动清理。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,7 +63,7 @@ cargo build --offline --quiet
 [[ -x "$BIN" ]] || fail "找不到可执行文件 $BIN"
 
 echo "==> 启动临时服务（端口 $PORT，数据库 $TMP/test.db）"
-SC_DB="$TMP/test.db" SC_PORT="$PORT" SC_BIND="127.0.0.1:$PORT" "$BIN" >"$TMP/server.log" 2>&1 &
+SC_DB="$TMP/test.db" SC_STRINGS_DIR="$ROOT/strings" SC_STRINGS_DB="$TMP/strings.db" SC_LANG=zh-CN SC_PORT="$PORT" SC_BIND="127.0.0.1:$PORT" "$BIN" >"$TMP/server.log" 2>&1 &
 PID=$!
 
 ready=0
@@ -74,12 +74,18 @@ for _ in $(seq 1 100); do
 done
 [[ "$ready" == "1" ]] || fail "服务未在预期时间内就绪"
 
-echo "==> 健康检查 / 页面"
+echo "==> 健康检查 / 页面 / 字符串"
 health="$(curl -sS "$BASE/api/health")"
 assert_jq "$health" '.ok == true' "健康检查"
-curl -sS "$BASE/login" | grep -q '智慧校园' || fail "登录页未渲染"
+LOGIN_HTML="$(curl -sS "$BASE/login")"
+grep -q '智慧校园' <<<"$LOGIN_HTML" || fail "登录页未渲染"
+if grep -q '@\[strings/' <<<"$LOGIN_HTML"; then fail "登录页存在未替换的字符串标签"; fi
 code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/")"
 assert_eq "$code" "303" "根路径跳转"
+[[ -f "$TMP/strings.db" ]] || fail "strings.db 未生成"
+STRING_COUNT="$(sqlite3 "$TMP/strings.db" "SELECT COUNT(*) FROM strings WHERE language = 'zh-CN';")"
+[[ "$STRING_COUNT" -gt 100 ]] || fail "strings.db 同步数量异常：$STRING_COUNT"
+curl -sS "$BASE/static/strings.js" | grep -q '"title"' || fail "strings.js 未输出"
 
 echo "==> 发布征集"
 SUB_JSON="$(post /api/new-submission "{\"auth\":\"$TEACHER\",\"name\":\"冒烟测试征集\",\"desc\":\"自动化测试\",\"type\":\"homework\",\"deadLine\":\"2026-12-31T20:00\"}")"
@@ -117,8 +123,10 @@ curl -sS -c "$TMP/stu-cookie" -o /dev/null -X POST -d "key=$STUDENT" "$BASE/logi
 HOME_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/")"
 grep -q "函数与导数" <<<"$HOME_HTML" || fail "学生首页没有显示班级征集"
 if grep -q "还没有征集" <<<"$HOME_HTML"; then fail "学生首页错误显示暂无征集"; fi
+if grep -q '@\[strings/' <<<"$HOME_HTML"; then fail "学生首页存在未替换的字符串标签"; fi
 SUBS_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submissions/")"
 grep -q "函数与导数" <<<"$SUBS_HTML" || fail "学生征集列表为空"
+if grep -q '@\[strings/' <<<"$SUBS_HTML"; then fail "学生征集页存在未替换的字符串标签"; fi
 # 老师空间别名 /home/*/teachers
 curl -sS -c "$TMP/tea-cookie" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/")" "200" "teachers 路径别名"
@@ -137,7 +145,9 @@ assert_jq "$RENAME_T" ".ok == true and .name == \"$NEW_TEACHER_NAME\"" "rename-a
 ALL_RENAMED="$(post /api/all-submission "{\"auth\":\"$TEACHER\",\"match_mode\":\"All\"}")"
 assert_jq "$ALL_RENAMED" ".datas[] | select(.id == \"$SUB\") | .createdBy == \"$NEW_TEACHER_NAME\"" "改名同步征集发布者"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "$NEW_TEACHER_NAME" || fail "老师空间未显示新名称"
-curl -sS -b "$TMP/tea-cookie" "$BASE/user" | grep -q 'data-rename=' || fail "账号中心缺少改名入口"
+ACCOUNT_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/user")"
+grep -q 'data-rename=' <<<"$ACCOUNT_HTML" || fail "账号中心缺少改名入口"
+if grep -q '@\[strings/' <<<"$ACCOUNT_HTML"; then fail "账号中心存在未替换的字符串标签"; fi
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$UP/" | grep -q "$NEW_TEACHER_NAME" || fail "改名未同步历史回复人"
 
 RENAME_S="$(post /api/rename-auth "{\"auth\":\"$STUDENT\",\"name\":\"$NEW_STUDENT_NAME\"}")"
@@ -145,7 +155,9 @@ assert_jq "$RENAME_S" ".ok == true and .name == \"$NEW_STUDENT_NAME\"" "rename-a
 DL_RENAMED="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")"
 assert_jq "$DL_RENAMED" ".datas[0].uploader == \"$NEW_STUDENT_NAME\"" "改名同步历史提交人"
 assert_eq "$(http_code /api/rename-auth "{\"auth\":\"$TEACHER\",\"name\":\"   \"}")" "400" "改名空名称"
+BAD_API="$(post /api/rename-auth '{"auth":"SC-INVALID","name":"x"}')"
 assert_eq "$(http_code /api/rename-auth '{"auth":"SC-INVALID","name":"x"}')" "401" "改名无效密钥"
+if echo "$BAD_API" | jq -r .msg | grep -qP '[\x{4e00}-\x{9fff}]'; then fail "API 错误信息不是英文"; fi
 
 echo "==> 学生视角（API）"
 ALL="$(post /api/all-submission "{\"auth\":\"$STUDENT\",\"match_mode\":\"All\"}")"

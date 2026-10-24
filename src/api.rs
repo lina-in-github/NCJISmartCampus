@@ -6,9 +6,9 @@ use serde_json::{json, Value};
 
 use crate::db;
 use crate::tools::{
-    api_bad, api_forbidden, api_not_found, api_ok, api_unauthorized, clean_display_name,
-    deadline_chip, fmt_iso, invalidate_auth_sessions, normalize_data, normalize_page_role, now_ts,
-    parse_deadline_value, parse_match_mode, role_session, MatchMode,
+    api_bad, api_forbidden, api_not_found, api_ok, api_unauthorized, clean_display_name, fmt_iso,
+    invalidate_auth_sessions, normalize_data, normalize_page_role, now_ts, parse_deadline_value,
+    parse_match_mode, role_session, MatchMode,
 };
 use crate::types::{
     AllSubmissionReq, AppState, AuthCtx, DelKeyReq, DelObjectReq, DownloadReq, NewClassReq,
@@ -26,10 +26,10 @@ const MAX_SUBMISSION_DESC: usize = 2_000;
 #[allow(clippy::result_large_err)]
 fn require_auth(st: &AppState, key: &str) -> Result<AuthCtx, Response> {
     if key.trim().is_empty() {
-        return Err(api_unauthorized("缺少 auth 参数"));
+        return Err(api_unauthorized("missing auth parameter"));
     }
     let db = st.db.lock().unwrap();
-    db::load_auth_by_key(&db, key).ok_or_else(|| api_unauthorized("auth 无效或已失效"))
+    db::load_auth_by_key(&db, key).ok_or_else(|| api_unauthorized("invalid or expired auth"))
 }
 
 fn submission_class(db: &rusqlite::Connection, id: &str) -> Option<String> {
@@ -85,13 +85,13 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
     let title = req.title.trim().to_string();
     let desc = req.desc.trim().to_string();
     if title.is_empty() {
-        return api_bad("title 不能为空");
+        return api_bad("title must not be empty");
     }
     if title.chars().count() > MAX_TITLE {
-        return api_bad(format!("title 过长（最多 {MAX_TITLE} 字）"));
+        return api_bad(format!("title is too long (max {MAX_TITLE} characters)"));
     }
     if desc.chars().count() > MAX_DESC {
-        return api_bad(format!("desc 过长（最多 {MAX_DESC} 字）"));
+        return api_bad(format!("desc is too long (max {MAX_DESC} characters)"));
     }
     let data = match normalize_data(req.data) {
         Ok(d) => d,
@@ -101,8 +101,8 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
     let db = st.db.lock().unwrap();
     match submission_class(&db, &req.which) {
         Some(c) if c == auth.class_id => {}
-        Some(_) => return api_not_found("该征集不属于当前班级"),
-        None => return api_not_found("征集不存在"),
+        Some(_) => return api_not_found("submission does not belong to the current class"),
+        None => return api_not_found("submission not found"),
     }
     let id = crate::tools::new_id("up");
     let now = now_ts();
@@ -131,7 +131,7 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
         Ok(_) => api_ok(json!({ "ok": true, "id": id })),
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("上传失败：{e}"),
+            format!("upload failed: {e}"),
         ),
     }
 }
@@ -146,7 +146,7 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
         Err(r) => return r,
     };
     if !auth.is_staff() {
-        return api_forbidden("仅老师或管理员可以下载 / 查看班级提交");
+        return api_forbidden("only teachers or admins can download class submissions");
     }
     let mode = match parse_match_mode(req.match_mode.as_ref()) {
         Ok(m) => m,
@@ -156,8 +156,8 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
     let db = st.db.lock().unwrap();
     match submission_class(&db, &req.which) {
         Some(c) if c == auth.class_id => {}
-        Some(_) => return api_not_found("该征集不属于当前班级"),
-        None => return api_not_found("征集不存在"),
+        Some(_) => return api_not_found("submission does not belong to the current class"),
+        None => return api_not_found("submission not found"),
     }
 
     #[derive(Clone)]
@@ -229,7 +229,7 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
         MatchMode::TitleRegex(re) => {
             let regex = match Regex::new(&re) {
                 Ok(r) => r,
-                Err(e) => return api_bad(format!("正则表达式不合法：{e}")),
+                Err(e) => return api_bad(format!("invalid regular expression: {e}")),
             };
             rows.retain(|r| regex.is_match(&r.title));
         }
@@ -248,7 +248,7 @@ pub async fn download(State(st): State<AppState>, Json(req): Json<DownloadReq>) 
                 Err(_) => {
                     return crate::tools::api_err(
                         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        "读取回复失败",
+                        "failed to read replies",
                     )
                 }
             };
@@ -403,7 +403,7 @@ pub async fn all_submission(
         MatchMode::TitleRegex(re) => {
             let regex = match Regex::new(&re) {
                 Ok(r) => r,
-                Err(e) => return api_bad(format!("正则表达式不合法：{e}")),
+                Err(e) => return api_bad(format!("invalid regular expression: {e}")),
             };
             rows.retain(|r| regex.is_match(&r.name));
         }
@@ -412,11 +412,9 @@ pub async fn all_submission(
         }
     }
 
-    let now = now_ts();
     let datas: Vec<Value> = rows
         .into_iter()
         .map(|r| {
-            let (chip, _) = deadline_chip(r.deadline, now);
             json!({
                 "id": r.id,
                 "name": r.name,
@@ -429,7 +427,6 @@ pub async fn all_submission(
                 "myUploadCount": r.my_upload_count,
                 "pendingCount": r.pending_count,
                 "latestUploadID": r.last_upload_id,
-                "status": chip,
             })
         })
         .collect();
@@ -449,7 +446,7 @@ pub async fn new_submission(
         Err(r) => return r,
     };
     if !auth.is_staff() {
-        return api_forbidden("仅老师或管理员可以发布征集");
+        return api_forbidden("only teachers or admins can create submissions");
     }
     let name = req.name.trim().to_string();
     let desc = req.desc.trim().to_string();
@@ -459,16 +456,18 @@ pub async fn new_submission(
         req.kind.trim().to_string()
     };
     if name.is_empty() {
-        return api_bad("name 不能为空");
+        return api_bad("name must not be empty");
     }
     if name.chars().count() > MAX_TITLE {
-        return api_bad(format!("name 过长（最多 {MAX_TITLE} 字）"));
+        return api_bad(format!("name is too long (max {MAX_TITLE} characters)"));
     }
     if desc.chars().count() > MAX_SUBMISSION_DESC {
-        return api_bad(format!("desc 过长（最多 {MAX_SUBMISSION_DESC} 字）"));
+        return api_bad(format!(
+            "desc is too long (max {MAX_SUBMISSION_DESC} characters)"
+        ));
     }
     if kind.chars().count() > 60 {
-        return api_bad("type 过长（最多 60 字）");
+        return api_bad("type is too long (max 60 characters)");
     }
     let deadline = match parse_deadline_value(req.deadline.as_ref()) {
         Ok(d) => d,
@@ -497,7 +496,7 @@ pub async fn new_submission(
         Ok(_) => api_ok(json!({ "ok": true, "id": id })),
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("创建失败：{e}"),
+            format!("create failed: {e}"),
         ),
     }
 }
@@ -512,20 +511,20 @@ pub async fn reply(State(st): State<AppState>, Json(req): Json<ReplyReq>) -> Res
         Err(r) => return r,
     };
     if !auth.is_staff() {
-        return api_forbidden("仅老师或管理员可以回复");
+        return api_forbidden("only teachers or admins can reply");
     }
     let content = req.content.trim().to_string();
     if content.is_empty() {
-        return api_bad("content 不能为空");
+        return api_bad("content must not be empty");
     }
     if content.chars().count() > MAX_DESC {
-        return api_bad(format!("content 过长（最多 {MAX_DESC} 字）"));
+        return api_bad(format!("content is too long (max {MAX_DESC} characters)"));
     }
     let db = st.db.lock().unwrap();
     match upload_class(&db, &req.upload_id) {
         Some(c) if c == auth.class_id => {}
-        Some(_) => return api_not_found("该上传不属于当前班级"),
-        None => return api_not_found("上传不存在"),
+        Some(_) => return api_not_found("upload does not belong to the current class"),
+        None => return api_not_found("upload not found"),
     }
     let id = crate::tools::new_id("rep");
     let res = db.execute(
@@ -545,7 +544,7 @@ pub async fn reply(State(st): State<AppState>, Json(req): Json<ReplyReq>) -> Res
         Ok(_) => api_ok(json!({ "ok": true, "id": id })),
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("回复失败：{e}"),
+            format!("reply failed: {e}"),
         ),
     }
 }
@@ -560,12 +559,12 @@ pub async fn new_class(State(st): State<AppState>, Json(req): Json<NewClassReq>)
         Err(r) => return r,
     };
     if !auth.is_admin() {
-        return api_forbidden("仅管理员可以创建班级");
+        return api_forbidden("only admins can create classes");
     }
     let desc = req.desc.trim();
     let name = req.name.trim();
     if name.is_empty() && desc.is_empty() {
-        return api_bad("desc（班级描述）不能为空");
+        return api_bad("desc (class description) must not be empty");
     }
     let db = st.db.lock().unwrap();
     match db::create_class(&db, &auth, name, desc) {
@@ -590,7 +589,7 @@ pub async fn new_user(State(st): State<AppState>, Json(req): Json<NewUserReq>) -
         Err(r) => return r,
     };
     if !auth.is_admin() {
-        return api_forbidden("仅管理员可以新增成员");
+        return api_forbidden("only admins can add members");
     }
     let db = st.db.lock().unwrap();
     match db::create_members(&db, &auth, &req.class_id, &req.kind, req.quantity) {
@@ -633,11 +632,11 @@ pub async fn del_key(State(st): State<AppState>, Json(req): Json<DelKeyReq>) -> 
         let db = st.db.lock().unwrap();
         let res = db.execute("DELETE FROM auths WHERE id = ?1", params![auth.id]);
         if let Err(e) = res {
-            return api_bad(format!("删除失败：{e}"));
+            return api_bad(format!("delete failed: {e}"));
         }
     }
     invalidate_auth_sessions(&st, &auth.id);
-    api_ok(json!({ "ok": true, "msg": "密钥已删除" }))
+    api_ok(json!({ "ok": true, "msg": "key deleted" }))
 }
 
 // ---------------------------------------------------------------------------
@@ -661,7 +660,7 @@ pub async fn rename_auth(State(st): State<AppState>, Json(req): Json<RenameAuthR
         Err(e) => {
             return crate::tools::api_err(
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("改名失败：{e}"),
+                format!("rename failed: {e}"),
             )
         }
     };
@@ -686,15 +685,15 @@ pub async fn rename_auth(State(st): State<AppState>, Json(req): Json<RenameAuthR
     })();
     match result {
         Ok(()) => match tx.commit() {
-            Ok(()) => api_ok(json!({ "ok": true, "name": name, "msg": "身份名称已更新" })),
+            Ok(()) => api_ok(json!({ "ok": true, "name": name, "msg": "identity name updated" })),
             Err(e) => crate::tools::api_err(
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("改名失败：{e}"),
+                format!("rename failed: {e}"),
             ),
         },
         Err(e) => crate::tools::api_err(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("改名失败：{e}"),
+            format!("rename failed: {e}"),
         ),
     }
 }
@@ -716,21 +715,21 @@ pub async fn del_object(
         },
         None => match role_session(&st, &headers) {
             Some((_, a)) => a,
-            None => return api_unauthorized("缺少 auth，且未登录"),
+            None => return api_unauthorized("missing auth and not logged in"),
         },
     };
     if !auth.is_admin() {
-        return api_forbidden("仅管理员可以删除对象");
+        return api_forbidden("only admins can delete objects");
     }
     let id = req.id.trim().to_string();
     if id.is_empty() {
-        return api_bad("id 不能为空");
+        return api_bad("id must not be empty");
     }
 
     if let Some(class_id) = id.strip_prefix("cls_") {
         let class_id = format!("cls_{class_id}");
         if class_id != auth.class_id {
-            return api_forbidden("只能删除自己管理的班级");
+            return api_forbidden("you can only delete a class you manage");
         }
         let members: Vec<String> = {
             let db = st.db.lock().unwrap();
@@ -747,13 +746,13 @@ pub async fn del_object(
         {
             let db = st.db.lock().unwrap();
             if let Err(e) = db.execute("DELETE FROM classes WHERE id = ?1", params![class_id]) {
-                return api_bad(format!("删除失败：{e}"));
+                return api_bad(format!("delete failed: {e}"));
             }
         }
         for m in members {
             invalidate_auth_sessions(&st, &m);
         }
-        return api_ok(json!({ "ok": true, "msg": "班级已删除" }));
+        return api_ok(json!({ "ok": true, "msg": "class deleted" }));
     }
 
     if id.starts_with("auth_") {
@@ -762,19 +761,19 @@ pub async fn del_object(
             db::load_auth_by_id(&db, &id)
         };
         let Some(target) = target else {
-            return api_not_found("auth 不存在");
+            return api_not_found("auth not found");
         };
         if target.class_id != auth.class_id {
-            return api_forbidden("只能删除当前班级的 auth");
+            return api_forbidden("you can only delete an auth in the current class");
         }
         {
             let db = st.db.lock().unwrap();
             if let Err(e) = db.execute("DELETE FROM auths WHERE id = ?1", params![id]) {
-                return api_bad(format!("删除失败：{e}"));
+                return api_bad(format!("delete failed: {e}"));
             }
         }
         invalidate_auth_sessions(&st, &id);
-        return api_ok(json!({ "ok": true, "msg": "auth 已删除" }));
+        return api_ok(json!({ "ok": true, "msg": "auth deleted" }));
     }
 
     let class = {
@@ -790,10 +789,10 @@ pub async fn del_object(
         }
     };
     let Some(class) = class else {
-        return api_not_found("对象不存在，或 id 类型不支持");
+        return api_not_found("object not found or unsupported id type");
     };
     if class != auth.class_id {
-        return api_forbidden("只能删除当前班级的对象");
+        return api_forbidden("you can only delete objects in the current class");
     }
     let table = if id.starts_with("sub_") {
         "submissions"
@@ -806,10 +805,10 @@ pub async fn del_object(
         let db = st.db.lock().unwrap();
         let sql = format!("DELETE FROM {table} WHERE id = ?1");
         if let Err(e) = db.execute(&sql, params![id]) {
-            return api_bad(format!("删除失败：{e}"));
+            return api_bad(format!("delete failed: {e}"));
         }
     }
-    api_ok(json!({ "ok": true, "msg": "已删除" }))
+    api_ok(json!({ "ok": true, "msg": "deleted" }))
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use crate::db;
+use crate::strings::{f2, t};
 use crate::tools::{
     clear_cookie, constant_time_eq, cookie_value, create_role_session, create_user_session,
     current_user, hash_password, invalidate_auth_sessions, now_ts, rand_string, role_session,
@@ -60,11 +61,11 @@ fn no_store(mut res: Response) -> Response {
 }
 
 fn html(s: String) -> Response {
-    no_store(Html(s).into_response())
+    no_store(Html(crate::strings::apply(&s)).into_response())
 }
 
 fn html_status(status: StatusCode, s: String) -> Response {
-    no_store((status, Html(s)).into_response())
+    no_store((status, Html(crate::strings::apply(&s))).into_response())
 }
 
 fn detect_mode(headers: &HeaderMap) -> String {
@@ -112,8 +113,9 @@ fn clear_user_session(st: &AppState, headers: &HeaderMap) -> Option<String> {
 fn logout_all(st: &AppState, headers: &HeaderMap) -> Response {
     clear_role_session(st, headers);
     clear_user_session(st, headers);
+    let target = format!("/login?ok={}", url_encode(&t("flash_logged_out")));
     with_cookies(
-        "/login?ok=%E5%B7%B2%E9%80%80%E5%87%BA%E7%99%BB%E5%BD%95",
+        &target,
         vec![clear_cookie(SID_COOKIE), clear_cookie(USID_COOKIE)],
     )
 }
@@ -446,25 +448,25 @@ fn home_stats(
             .unwrap_or(0);
         vec![
             StatItem {
-                label: "班级成员".to_string(),
+                label: t("stat_members"),
                 value: members.to_string(),
                 icon: "users",
                 tone: "",
             },
             StatItem {
-                label: "进行中征集".to_string(),
+                label: t("stat_active_submissions"),
                 value: active.to_string(),
                 icon: "inbox",
                 tone: "sky",
             },
             StatItem {
-                label: "待回复提交".to_string(),
+                label: t("stat_pending"),
                 value: pending.to_string(),
                 icon: "clock",
                 tone: "amber",
             },
             StatItem {
-                label: "已回复提交".to_string(),
+                label: t("stat_replied"),
                 value: replied.to_string(),
                 icon: "check-circle",
                 tone: "green",
@@ -482,30 +484,29 @@ fn home_stats(
             .unwrap_or(0);
         vec![
             StatItem {
-                label: "班级征集".to_string(),
+                label: t("stat_class_submissions"),
                 value: subs.to_string(),
                 icon: "inbox",
                 tone: "",
             },
             StatItem {
                 label: if parent {
-                    "孩子提交"
+                    t("stat_child_uploads")
                 } else {
-                    "我的提交"
-                }
-                .to_string(),
+                    t("stat_my_uploads")
+                },
                 value: uploads.to_string(),
                 icon: "folder",
                 tone: "sky",
             },
             StatItem {
-                label: "收到回复".to_string(),
+                label: t("stat_replies_received"),
                 value: replies.to_string(),
                 icon: "reply",
                 tone: "green",
             },
             StatItem {
-                label: "待回复提交".to_string(),
+                label: t("stat_pending"),
                 value: pending.to_string(),
                 icon: "clock",
                 tone: "amber",
@@ -617,20 +618,20 @@ pub async fn login_submit(
     let Some(mode) = normalize_mode(&mode) else {
         return html_status(
             StatusCode::BAD_REQUEST,
-            view::login_page("mob", "parent", Some("登录地址不正确")),
+            view::login_page("mob", "parent", Some(&t("login_error_wrong_address"))),
         );
     };
     let Some(req_role) = normalize_role(&role) else {
         return html_status(
             StatusCode::NOT_FOUND,
-            view::login_page(mode, "parent", Some("未知的登录身份")),
+            view::login_page(mode, "parent", Some(&t("login_error_unknown_identity"))),
         );
     };
     let key = form.key.trim();
     if key.is_empty() {
         return html_status(
             StatusCode::BAD_REQUEST,
-            view::login_page(mode, req_role, Some("请输入班级密钥")),
+            view::login_page(mode, req_role, Some(&t("login_error_enter_key"))),
         );
     }
     let auth = {
@@ -640,7 +641,7 @@ pub async fn login_submit(
     let Some(auth) = auth else {
         return html_status(
             StatusCode::UNAUTHORIZED,
-            view::login_page(mode, req_role, Some("密钥无效或已被删除，请检查后重试")),
+            view::login_page(mode, req_role, Some(&t("login_error_invalid_key"))),
         );
     };
     let allowed = match req_role {
@@ -650,10 +651,10 @@ pub async fn login_submit(
         _ => false,
     };
     if !allowed {
-        let msg = format!(
-            "该密钥属于{}身份，不能以{}身份登录",
+        let msg = f2(
+            "login_error_role_mismatch",
             crate::tools::role_label(&auth.role),
-            crate::tools::role_label(req_role)
+            crate::tools::role_label(req_role),
         );
         return html_status(
             StatusCode::FORBIDDEN,
@@ -738,36 +739,33 @@ async fn render_home_route(
         [] => {
             let stats = home_stats(&db, &auth, now, &active_role);
             let submissions = list_submissions(&db, &auth, 4);
-            let (filter, title, hint) = match active_role.as_str() {
-                "teacher" => (
-                    Some("pending"),
-                    "待回复的提交",
-                    "所有提交都已回复，辛苦了。新的提交会实时出现在这里。",
-                ),
-                "admin" => (None, "最近提交", "班级还没有任何提交。"),
-                "parent" => (
-                    None,
-                    "孩子的最近提交",
-                    "孩子还没有提交过内容，可以先去征集列表看看。",
-                ),
-                _ => (
-                    None,
-                    "我的最近提交",
-                    "你还没有提交过内容，可以先去征集列表看看。",
-                ),
+            let (filter, title_key, hint_key) = match active_role.as_str() {
+                "teacher" => (Some("pending"), "home_recent_teacher", "home_pending_hint"),
+                "admin" => (None, "home_recent_admin", "home_admin_hint"),
+                "parent" => (None, "home_recent_parent", "home_parent_hint"),
+                _ => (None, "home_recent_self", "home_self_hint"),
             };
+            let uploads_title = t(title_key);
+            let uploads_hint = t(hint_key);
             let uploads = list_uploads(&db, &auth, filter, 4, false);
             drop(db);
             let ctx = page_context(
-                &st, &headers, &session, &auth, &prefs, "首页", "home", flash,
+                &st,
+                &headers,
+                &session,
+                &auth,
+                &prefs,
+                &t("page_home"),
+                "home",
+                flash,
             );
             html(view::home(
                 &ctx,
                 &stats,
                 &submissions,
                 &uploads,
-                title,
-                hint,
+                &uploads_title,
+                &uploads_hint,
             ))
         }
         ["submissions"] => {
@@ -779,7 +777,7 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "征集",
+                &t("page_submissions"),
                 "submissions",
                 flash,
             );
@@ -797,7 +795,7 @@ async fn render_home_route(
                 return msg_redirect(
                     &format!("{base}submissions/"),
                     "err",
-                    "仅老师或管理员可以发布征集",
+                    &t("flash_teacher_only_publish"),
                 );
             }
             let ctx = page_context(
@@ -806,7 +804,7 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "发布",
+                &t("page_publish"),
                 "submissions_new",
                 flash,
             );
@@ -827,7 +825,14 @@ async fn render_home_route(
             let staff = auth.is_staff();
             drop(db);
             let ctx = page_context(
-                &st, &headers, &session, &auth, &prefs, "提交", "uploads", flash,
+                &st,
+                &headers,
+                &session,
+                &auth,
+                &prefs,
+                &t("page_uploads"),
+                "uploads",
+                flash,
             );
             html(view::uploads(
                 &ctx,
@@ -846,11 +851,11 @@ async fn render_home_route(
                     &session,
                     &auth,
                     &prefs,
-                    "未找到",
+                    &t("common_not_found"),
                     "submissions",
                     flash,
                 );
-                return not_found_in(&ctx, "该征集不存在，或不属于当前班级。");
+                return not_found_in(&ctx, &t("error_submission_missing"));
             };
             let next = latest_upload_id(&db, &auth, &sub.id);
             drop(db);
@@ -869,11 +874,11 @@ async fn render_home_route(
                     &session,
                     &auth,
                     &prefs,
-                    "未找到",
+                    &t("common_not_found"),
                     "submissions",
                     flash,
                 );
-                return not_found_in(&ctx, "该征集不存在，或不属于当前班级。");
+                return not_found_in(&ctx, &t("error_submission_missing"));
             };
             let rows = if auth.is_staff() {
                 list_uploads(&db, &auth, None, 500, false)
@@ -895,7 +900,7 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "征集详情",
+                &t("page_submission_detail"),
                 "submissions",
                 flash,
             );
@@ -910,11 +915,11 @@ async fn render_home_route(
                     &session,
                     &auth,
                     &prefs,
-                    "未找到",
+                    &t("common_not_found"),
                     "submissions",
                     flash,
                 );
-                return not_found_in(&ctx, "该征集不存在，或不属于当前班级。");
+                return not_found_in(&ctx, &t("error_submission_missing"));
             };
             let (count, last) = own_upload_info(&db, &auth, &sub.id);
             drop(db);
@@ -924,7 +929,7 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "上传作品",
+                &t("page_upload"),
                 "submissions",
                 flash,
             );
@@ -939,11 +944,11 @@ async fn render_home_route(
                     &session,
                     &auth,
                     &prefs,
-                    "未找到",
+                    &t("common_not_found"),
                     "uploads",
                     flash,
                 );
-                return not_found_in(&ctx, "该提交不存在，或你没有权限查看。");
+                return not_found_in(&ctx, &t("error_upload_missing"));
             };
             let sub = load_submission(&db, &auth, &upload.submission_id);
             let Some(sub) = sub else {
@@ -954,11 +959,11 @@ async fn render_home_route(
                     &session,
                     &auth,
                     &prefs,
-                    "未找到",
+                    &t("common_not_found"),
                     "uploads",
                     flash,
                 );
-                return not_found_in(&ctx, "关联的征集不存在。");
+                return not_found_in(&ctx, &t("error_submission_related_missing"));
             };
             let replies = load_replies(&db, &upload.id);
             let staff = auth.is_staff();
@@ -970,7 +975,7 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "提交详情",
+                &t("page_upload_detail"),
                 "uploads",
                 flash,
             );
@@ -990,11 +995,11 @@ async fn render_home_route(
                 &session,
                 &auth,
                 &prefs,
-                "未找到",
+                &t("common_not_found"),
                 "home",
                 flash,
             );
-            not_found_in(&ctx, "页面不存在。")
+            not_found_in(&ctx, &t("error_page_missing"))
         }
     }
 }
@@ -1038,10 +1043,10 @@ pub async fn user_page(State(st): State<AppState>, headers: HeaderMap, Query(q):
 
     // 未登录：若当前有未绑定账号的角色会话，则预填该密钥并提示绑定。
     let (mode, prefill, note) = if let Some((session, auth)) = role_session(&st, &headers) {
-        let note = format!(
-            "当前以「{}」的{}身份访问，班级密钥尚未绑定账号。创建账号并绑定后，即可管理多个班级身份。",
+        let note = f2(
+            "account_session_note",
             auth.class_name,
-            crate::tools::role_label(&auth.role)
+            crate::tools::role_label(&auth.role),
         );
         let prefill = if auth.user_id.is_none() {
             auth.key.clone()
@@ -1062,22 +1067,23 @@ pub async fn user_login(
 ) -> Response {
     let username = form.username.trim();
     if username.is_empty() || form.password.is_empty() {
-        return msg_redirect("/user", "err", "请输入用户名和密码");
+        return msg_redirect("/user", "err", &t("flash_enter_username_password"));
     }
     let found = {
         let db = st.db.lock().unwrap();
         db::load_user_with_secret(&db, username)
     };
     let Some(found) = found else {
-        return msg_redirect("/user", "err", "用户名或密码错误");
+        return msg_redirect("/user", "err", &t("flash_wrong_credentials"));
     };
     if !constant_time_eq(&hash_password(&found.salt, &form.password), &found.pwhash) {
-        return msg_redirect("/user", "err", "用户名或密码错误");
+        return msg_redirect("/user", "err", &t("flash_wrong_credentials"));
     }
     clear_user_session(&st, &headers);
     let token = create_user_session(&st, found.user.id);
+    let target = format!("/user?ok={}", url_encode(&t("flash_welcome")));
     with_cookies(
-        "/user?ok=%E6%AC%A2%E8%BF%8E%E5%9B%9E%E6%9D%A5",
+        &target,
         vec![crate::tools::session_cookie(USID_COOKIE, &token)],
     )
 }
@@ -1097,20 +1103,16 @@ pub async fn user_register(
 ) -> Response {
     let username = form.username.trim();
     if !valid_username(username) {
-        return msg_redirect(
-            "/user",
-            "err",
-            "用户名需为 2–32 位，只能包含中英文、数字、下划线或短横线",
-        );
+        return msg_redirect("/user", "err", &t("flash_username_invalid"));
     }
     if form.password.chars().count() < 6 {
-        return msg_redirect("/user", "err", "密码至少需要 6 位");
+        return msg_redirect("/user", "err", &t("flash_password_min"));
     }
     if form.password != form.password2 {
-        return msg_redirect("/user", "err", "两次输入的密码不一致");
+        return msg_redirect("/user", "err", &t("flash_password_mismatch"));
     }
     if form.password.chars().count() > 128 {
-        return msg_redirect("/user", "err", "密码过长");
+        return msg_redirect("/user", "err", &t("flash_password_too_long"));
     }
 
     let key = form.key.trim();
@@ -1123,8 +1125,8 @@ pub async fn user_register(
         };
         match found {
             Some(a) if a.user_id.is_none() => Some(a),
-            Some(_) => return msg_redirect("/user", "err", "该密钥已被其他账号绑定"),
-            None => return msg_redirect("/user", "err", "密钥无效或已被删除"),
+            Some(_) => return msg_redirect("/user", "err", &t("flash_key_bound")),
+            None => return msg_redirect("/user", "err", &t("flash_key_invalid")),
         }
     };
 
@@ -1153,10 +1155,10 @@ pub async fn user_register(
         }
     };
     let Some(user_id) = created else {
-        return msg_redirect("/user", "err", "用户名已被使用，请换一个");
+        return msg_redirect("/user", "err", &t("flash_username_taken"));
     };
     let mut cookies = Vec::new();
-    let mut target = "/user?ok=%E8%B4%A6%E5%8F%B7%E5%B7%B2%E5%88%9B%E5%BB%BA";
+    let mut target = format!("/user?ok={}", url_encode(&t("flash_account_created")));
     if let Some(auth) = claim {
         {
             let db = st.db.lock().unwrap();
@@ -1168,12 +1170,12 @@ pub async fn user_register(
         clear_role_session(&st, &headers);
         let token = create_role_session(&st, &auth, auth.page_role(), "mob");
         cookies.push(crate::tools::session_cookie(SID_COOKIE, &token));
-        target = "/user?ok=%E8%B4%A6%E5%8F%B7%E5%B7%B2%E5%88%9B%E5%BB%BA%EF%BC%8C%E5%AF%86%E9%92%A5%E5%B7%B2%E7%BB%91%E5%AE%9A";
+        target = format!("/user?ok={}", url_encode(&t("flash_account_created_bound")));
     }
     clear_user_session(&st, &headers);
     let usid = create_user_session(&st, user_id);
     cookies.push(crate::tools::session_cookie(USID_COOKIE, &usid));
-    with_cookies(target, cookies)
+    with_cookies(&target, cookies)
 }
 
 pub async fn user_claim(
@@ -1182,24 +1184,24 @@ pub async fn user_claim(
     Form(form): Form<ClaimForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     let key = form.key.trim();
     if key.is_empty() {
-        return msg_redirect("/user", "err", "请输入班级密钥");
+        return msg_redirect("/user", "err", &t("flash_enter_key"));
     }
     let auth = {
         let db = st.db.lock().unwrap();
         db::load_auth_by_key(&db, key)
     };
     let Some(auth) = auth else {
-        return msg_redirect("/user", "err", "密钥无效或已被删除");
+        return msg_redirect("/user", "err", &t("flash_key_invalid"));
     };
     match auth.user_id {
         Some(uid) if uid == user.id => {
-            return msg_redirect("/user", "ok", "该密钥已经绑定在你的账号上");
+            return msg_redirect("/user", "ok", &t("flash_already_bound"));
         }
-        Some(_) => return msg_redirect("/user", "err", "该密钥已被其他账号绑定"),
+        Some(_) => return msg_redirect("/user", "err", &t("flash_key_bound")),
         None => {}
     }
     let result = {
@@ -1210,8 +1212,8 @@ pub async fn user_claim(
         )
     };
     match result {
-        Ok(1) => msg_redirect("/user", "ok", "密钥已绑定到账号"),
-        _ => msg_redirect("/user", "err", "绑定失败，请稍后重试"),
+        Ok(1) => msg_redirect("/user", "ok", &t("flash_bound")),
+        _ => msg_redirect("/user", "err", &t("flash_bind_failed")),
     }
 }
 
@@ -1221,17 +1223,17 @@ pub async fn user_enter(
     Form(form): Form<EnterClassForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
         db::load_auth_by_id(&db, &form.auth_id)
     };
     let Some(auth) = auth else {
-        return msg_redirect("/user", "err", "该身份不存在或已被删除");
+        return msg_redirect("/user", "err", &t("flash_identity_missing"));
     };
     if auth.user_id != Some(user.id) {
-        return msg_redirect("/user", "err", "该身份不属于当前账号");
+        return msg_redirect("/user", "err", &t("flash_not_your_identity"));
     }
     clear_role_session(&st, &headers);
     let mode = user.prefs.mode.as_str();
@@ -1252,17 +1254,17 @@ pub async fn user_delete_auth(
     Path(auth_id): Path<String>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
         db::load_auth_by_id(&db, &auth_id)
     };
     let Some(auth) = auth else {
-        return msg_redirect("/user", "err", "该身份不存在");
+        return msg_redirect("/user", "err", &t("flash_identity_missing"));
     };
     if auth.user_id != Some(user.id) {
-        return msg_redirect("/user", "err", "只能删除自己账号下的身份");
+        return msg_redirect("/user", "err", &t("flash_only_own_auth"));
     }
     let currently_using = role_session(&st, &headers)
         .map(|(_, a)| a.id == auth_id)
@@ -1270,7 +1272,8 @@ pub async fn user_delete_auth(
     {
         let db = st.db.lock().unwrap();
         if let Err(e) = db.execute("DELETE FROM auths WHERE id = ?1", params![auth_id]) {
-            return msg_redirect("/user", "err", &format!("删除失败：{e}"));
+            eprintln!("delete auth failed: {e}");
+            return msg_redirect("/user", "err", &t("flash_delete_failed"));
         }
     }
     invalidate_auth_sessions(&st, &auth_id);
@@ -1281,11 +1284,11 @@ pub async fn user_delete_auth(
         }
         cookies.push(clear_cookie(SID_COOKIE));
     }
-    let target = "/user?ok=%E8%BA%AB%E4%BB%BD%E5%B7%B2%E5%88%A0%E9%99%A4";
+    let target = format!("/user?ok={}", url_encode(&t("flash_identity_deleted")));
     if cookies.is_empty() {
-        redirect(target)
+        redirect(&target)
     } else {
-        with_cookies(target, cookies)
+        with_cookies(&target, cookies)
     }
 }
 
@@ -1295,7 +1298,7 @@ pub async fn user_prefs(
     Form(form): Form<PrefsForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     let display = form.display_name.trim();
     let display = if display.is_empty() {
@@ -1304,7 +1307,7 @@ pub async fn user_prefs(
         display.to_string()
     };
     if display.chars().count() > 40 {
-        return msg_redirect("/user", "err", "显示名称最多 40 个字");
+        return msg_redirect("/user", "err", &t("flash_display_name_too_long"));
     }
     let mut prefs = Prefs {
         theme: form.theme,
@@ -1319,8 +1322,11 @@ pub async fn user_prefs(
         )
     };
     match res {
-        Ok(_) => msg_redirect("/user", "ok", "偏好设置已保存"),
-        Err(e) => msg_redirect("/user", "err", &format!("保存失败：{e}")),
+        Ok(_) => msg_redirect("/user", "ok", &t("flash_prefs_saved")),
+        Err(e) => {
+            eprintln!("save prefs failed: {e}");
+            msg_redirect("/user", "err", &t("flash_save_failed"))
+        }
     }
 }
 
@@ -1330,13 +1336,13 @@ pub async fn user_password(
     Form(form): Form<PasswordForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     if form.new.chars().count() < 6 {
-        return msg_redirect("/user", "err", "新密码至少需要 6 位");
+        return msg_redirect("/user", "err", &t("flash_password_min"));
     }
     if form.new != form.new2 {
-        return msg_redirect("/user", "err", "两次输入的新密码不一致");
+        return msg_redirect("/user", "err", &t("flash_password_mismatch"));
     }
     let secret = {
         let db = st.db.lock().unwrap();
@@ -1350,10 +1356,10 @@ pub async fn user_password(
         .flatten()
     };
     let Some((salt, hash)) = secret else {
-        return msg_redirect("/user", "err", "账号不存在");
+        return msg_redirect("/user", "err", &t("flash_account_missing"));
     };
     if !constant_time_eq(&hash_password(&salt, &form.old), &hash) {
-        return msg_redirect("/user", "err", "当前密码不正确");
+        return msg_redirect("/user", "err", &t("flash_current_password_wrong"));
     }
     let new_salt = rand_string(16);
     let new_hash = hash_password(&new_salt, &form.new);
@@ -1372,9 +1378,12 @@ pub async fn user_password(
                 .lock()
                 .unwrap()
                 .retain(|t, uid| *uid != user.id || Some(t.as_str()) == current_token.as_deref());
-            msg_redirect("/user", "ok", "密码已修改")
+            msg_redirect("/user", "ok", &t("flash_password_changed"))
         }
-        Err(e) => msg_redirect("/user", "err", &format!("修改失败：{e}")),
+        Err(e) => {
+            eprintln!("change password failed: {e}");
+            msg_redirect("/user", "err", &t("flash_change_failed"))
+        }
     }
 }
 
@@ -1384,28 +1393,24 @@ pub async fn user_create_class(
     Form(form): Form<ClassForm>,
 ) -> Response {
     let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect("/user", "err", "请先登录账号");
+        return msg_redirect("/user", "err", &t("flash_need_login"));
     };
     let auth = {
         let db = st.db.lock().unwrap();
         db::load_auth_by_id(&db, &form.admin_auth_id)
     };
     let Some(auth) = auth else {
-        return msg_redirect("/user", "err", "管理员身份不存在");
+        return msg_redirect("/user", "err", &t("flash_admin_identity_missing"));
     };
     if auth.user_id != Some(user.id) {
-        return msg_redirect("/user", "err", "该管理员身份不属于当前账号");
+        return msg_redirect("/user", "err", &t("flash_not_your_admin_identity"));
     }
     if !auth.is_admin() {
-        return msg_redirect("/user", "err", "只有管理员身份可以创建班级");
+        return msg_redirect("/user", "err", &t("flash_admin_only_create_class"));
     }
     let db = st.db.lock().unwrap();
     match db::create_class(&db, &auth, &form.name, &form.desc) {
-        Ok(_c) => msg_redirect(
-            "/user",
-            "ok",
-            "班级已创建，新的管理员密钥已加入你的身份列表",
-        ),
+        Ok(_c) => msg_redirect("/user", "ok", &t("flash_class_created")),
         Err(e) => msg_redirect("/user", "err", &e),
     }
 }

@@ -110,6 +110,7 @@ pub fn js_json<T: Serialize>(v: &T) -> String {
         .replace('&', "\\u0026")
         .replace('<', "\\u003c")
         .replace('>', "\\u003e")
+        .replace("@[", "\\u0040[")
         .replace('\u{2028}', "\\u2028")
         .replace('\u{2029}', "\\u2029")
 }
@@ -118,13 +119,13 @@ pub fn js_json<T: Serialize>(v: &T) -> String {
 pub fn clean_display_name(raw: &str) -> Result<String, String> {
     let name = raw.trim();
     if name.is_empty() {
-        return Err("name 不能为空".to_string());
+        return Err("name must not be empty".to_string());
     }
     if name.chars().count() > 40 {
-        return Err("name 过长（最多 40 个字符）".to_string());
+        return Err("name is too long (max 40 characters)".to_string());
     }
     if name.chars().any(char::is_control) {
-        return Err("name 不能包含控制字符".to_string());
+        return Err("name must not contain control characters".to_string());
     }
     Ok(name.to_string())
 }
@@ -255,7 +256,7 @@ pub fn parse_attachment(v: &Value) -> Option<Attachment> {
         Value::String(s) => {
             let (mime, b64) = data_url_parts(s)?;
             Some(Attachment {
-                name: "附件".to_string(),
+                name: "Attachment".to_string(),
                 mime,
                 b64,
             })
@@ -273,10 +274,10 @@ pub fn parse_attachment(v: &Value) -> Option<Attachment> {
             let name = map
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or("附件")
+                .unwrap_or("Attachment")
                 .trim();
             let name: String = if name.is_empty() {
-                "附件".to_string()
+                "Attachment".to_string()
             } else {
                 truncate_chars(name, 120)
             };
@@ -298,10 +299,10 @@ pub fn normalize_data(v: Value) -> Result<Value, String> {
     let arr = match v {
         Value::Null => Vec::new(),
         Value::Array(arr) => arr,
-        _ => return Err("data 必须是数组".to_string()),
+        _ => return Err("data must be an array".to_string()),
     };
     if arr.len() > MAX_ATTACHMENTS {
-        return Err(format!("附件数量过多，最多 {MAX_ATTACHMENTS} 个"));
+        return Err(format!("too many attachments (max {MAX_ATTACHMENTS})"));
     }
     let mut out = Vec::new();
     let mut total = 0usize;
@@ -315,31 +316,31 @@ pub fn normalize_data(v: Value) -> Result<Value, String> {
                 if let Some((mime, data)) = data_url_parts(raw) {
                     total += b64_binary_len(&data);
                     if total > MAX_TOTAL_BYTES {
-                        return Err("附件总大小超出限制（约 18MB）".to_string());
+                        return Err("attachments exceed the size limit (about 18MB)".to_string());
                     }
                     out.push(Value::String(format!("data:{mime};base64,{data}")));
                 } else if is_base64(raw) {
                     total += b64_binary_len(raw);
                     if total > MAX_TOTAL_BYTES {
-                        return Err("附件总大小超出限制（约 18MB）".to_string());
+                        return Err("attachments exceed the size limit (about 18MB)".to_string());
                     }
                     out.push(json!({
-                        "name": format!("附件 {}", idx + 1),
+                        "name": format!("Attachment {}", idx + 1),
                         "mime": "application/octet-stream",
                         "data": raw
                     }));
                 } else {
-                    return Err("附件必须是 base64 编码或 base64 data URL".to_string());
+                    return Err("attachment must be base64 or a base64 data URL".to_string());
                 }
             }
             Value::Object(map) => {
                 let data = map
                     .get("data")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "附件对象缺少 data 字段".to_string())?
+                    .ok_or_else(|| "attachment object is missing the data field".to_string())?
                     .trim();
                 if !is_base64(data) {
-                    return Err("附件的 data 必须是 base64 编码".to_string());
+                    return Err("attachment data must be base64".to_string());
                 }
                 let mime = map
                     .get("mime")
@@ -347,25 +348,25 @@ pub fn normalize_data(v: Value) -> Result<Value, String> {
                     .and_then(Value::as_str)
                     .unwrap_or("application/octet-stream");
                 if !valid_mime(mime) {
-                    return Err("附件的 mime 类型不合法".to_string());
+                    return Err("invalid attachment mime type".to_string());
                 }
                 let name = map
                     .get("name")
                     .and_then(Value::as_str)
-                    .unwrap_or("附件")
+                    .unwrap_or("Attachment")
                     .trim();
                 let name = if name.is_empty() {
-                    format!("附件 {}", idx + 1)
+                    format!("Attachment {}", idx + 1)
                 } else {
                     truncate_chars(name, 120)
                 };
                 total += b64_binary_len(data);
                 if total > MAX_TOTAL_BYTES {
-                    return Err("附件总大小超出限制（约 18MB）".to_string());
+                    return Err("attachments exceed the size limit (about 18MB)".to_string());
                 }
                 out.push(json!({ "name": name, "mime": mime, "data": data }));
             }
-            _ => return Err("附件格式不支持".to_string()),
+            _ => return Err("unsupported attachment format".to_string()),
         }
     }
     Ok(Value::Array(out))
@@ -572,12 +573,14 @@ pub fn parse_duration(input: &str) -> Option<i64> {
 /// 兼容 `Before(time)`：数字时间戳、ISO 时间、或者 7d/12h/30m 这样的相对时长。
 pub fn parse_before(v: &Value) -> Result<i64, String> {
     match v {
-        Value::Number(n) => n.as_i64().ok_or_else(|| "Before 时间戳不合法".to_string()),
+        Value::Number(n) => n
+            .as_i64()
+            .ok_or_else(|| "invalid Before timestamp".to_string()),
         Value::String(s) => {
             if let Some(secs) = parse_duration(s) {
                 Ok(now_ts() - secs)
             } else {
-                parse_time(s).ok_or_else(|| "Before 时间格式不合法".to_string())
+                parse_time(s).ok_or_else(|| "invalid Before time format".to_string())
             }
         }
         Value::Object(map) => {
@@ -585,10 +588,10 @@ pub fn parse_before(v: &Value) -> Result<i64, String> {
                 .get("time")
                 .or_else(|| map.get("value"))
                 .or_else(|| map.get("ts"))
-                .ok_or_else(|| "Before 缺少 time 字段".to_string())?;
+                .ok_or_else(|| "Before requires a time field".to_string())?;
             parse_before(v)
         }
-        _ => Err("Before 时间格式不合法".to_string()),
+        _ => Err("invalid Before time format".to_string()),
     }
 }
 
@@ -596,7 +599,7 @@ pub fn parse_deadline_value(v: Option<&Value>) -> Result<Option<i64>, String> {
     match v {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(n)) => {
-            let n = n.as_i64().ok_or_else(|| "deadLine 不合法".to_string())?;
+            let n = n.as_i64().ok_or_else(|| "invalid deadLine".to_string())?;
             if n <= 0 {
                 Ok(None)
             } else {
@@ -609,45 +612,11 @@ pub fn parse_deadline_value(v: Option<&Value>) -> Result<Option<i64>, String> {
                 Ok(None)
             } else {
                 parse_time(s).map(Some).ok_or_else(|| {
-                    "deadLine 时间格式不合法（示例：2026-11-01T20:00 或 2026-11-01）".to_string()
+                    "invalid deadLine format (e.g. 2026-11-01T20:00 or 2026-11-01)".to_string()
                 })
             }
         }
-        Some(_) => Err("deadLine 必须是时间字符串或时间戳".to_string()),
-    }
-}
-
-pub fn relative_time(ts: i64, now: i64) -> String {
-    let d = now - ts;
-    if d < 0 {
-        fmt_datetime(ts)
-    } else if d < 60 {
-        "刚刚".to_string()
-    } else if d < 3600 {
-        format!("{} 分钟前", d / 60)
-    } else if d < 86_400 {
-        format!("{} 小时前", d / 3600)
-    } else if d < 7 * 86_400 {
-        format!("{} 天前", d / 86_400)
-    } else {
-        fmt_date(ts)
-    }
-}
-
-/// 返回 (文案, CSS 修饰类)
-pub fn deadline_chip(deadline: Option<i64>, now: i64) -> (String, &'static str) {
-    let Some(ts) = deadline else {
-        return ("无截止".to_string(), "muted");
-    };
-    let d = ts - now;
-    if d <= 0 {
-        ("已截止".to_string(), "danger")
-    } else if d < 3600 {
-        (format!("剩 {} 分钟", (d / 60).max(1)), "danger")
-    } else if d < 86_400 {
-        (format!("剩 {} 小时", d / 3600), "warn")
-    } else {
-        (format!("剩 {} 天", d / 86_400), "ok")
+        Some(_) => Err("deadLine must be a time string or timestamp".to_string()),
     }
 }
 
@@ -655,13 +624,13 @@ pub fn deadline_chip(deadline: Option<i64>, now: i64) -> (String, &'static str) 
 // 角色
 // ---------------------------------------------------------------------------
 
-pub fn role_label(role: &str) -> &'static str {
-    match role {
-        "parent" => "家长",
-        "teacher" => "老师",
-        "admin" => "管理员",
-        _ => "学生",
-    }
+pub fn role_label(role: &str) -> String {
+    crate::strings::t(match role {
+        "parent" => "role_parent",
+        "teacher" => "role_teacher",
+        "admin" => "role_admin",
+        _ => "role_student",
+    })
 }
 
 pub fn normalize_page_role(role: &str) -> Option<&'static str> {
@@ -709,10 +678,10 @@ pub fn parse_match_mode(v: Option<&Value>) -> Result<MatchMode, String> {
                 single.insert(name.clone(), value.clone());
                 variant_from(name, Some(&single))
             } else {
-                Err("match_mode 格式不正确".to_string())
+                Err("invalid match_mode format".to_string())
             }
         }
-        _ => Err("match_mode 格式不正确".to_string()),
+        _ => Err("invalid match_mode format".to_string()),
     }
 }
 
@@ -759,9 +728,9 @@ fn variant_from(name: &str, map: Option<&Map<String, Value>>) -> Result<MatchMod
                         .and_then(Value::as_i64)
                 }),
             }
-            .ok_or_else(|| "Random 需要 quantity 数量".to_string())?;
+            .ok_or_else(|| "Random requires a quantity".to_string())?;
             if q < 0 {
-                return Err("Random quantity 不能为负数".to_string());
+                return Err("Random quantity must not be negative".to_string());
             }
             Ok(MatchMode::Random(q.min(10_000) as usize))
         }
@@ -783,7 +752,7 @@ fn variant_from(name: &str, map: Option<&Map<String, Value>>) -> Result<MatchMod
                     .to_string(),
             };
             if id.is_empty() {
-                Err("StudentID 需要 id".to_string())
+                Err("StudentID requires an id".to_string())
             } else {
                 Ok(MatchMode::StudentId(id))
             }
@@ -809,7 +778,7 @@ fn variant_from(name: &str, map: Option<&Map<String, Value>>) -> Result<MatchMod
                         _ => None,
                     }),
             }
-            .ok_or_else(|| "ShortStudentID 需要整数 id".to_string())?;
+            .ok_or_else(|| "ShortStudentID requires an integer id".to_string())?;
             Ok(MatchMode::ShortStudentId(id))
         }
         "titleregex" => {
@@ -833,7 +802,7 @@ fn variant_from(name: &str, map: Option<&Map<String, Value>>) -> Result<MatchMod
                     .to_string(),
             };
             if re.is_empty() {
-                Err("TitleReGex 需要正则表达式".to_string())
+                Err("TitleReGex requires a regular expression".to_string())
             } else {
                 Ok(MatchMode::TitleRegex(re))
             }
@@ -847,11 +816,11 @@ fn variant_from(name: &str, map: Option<&Map<String, Value>>) -> Result<MatchMod
                             .or_else(|| m.get("value"))
                             .or_else(|| m.get("ts"))
                     })
-                    .ok_or_else(|| "Before 需要时间".to_string())?,
+                    .ok_or_else(|| "Before requires a time".to_string())?,
             };
             Ok(MatchMode::Before(parse_before(time)?))
         }
-        _ => Err(format!("未知的 match_mode：{name}")),
+        _ => Err(format!("unknown match_mode: {name}")),
     }
 }
 
@@ -1007,12 +976,12 @@ display:flex;align-items:center;justify-content:center;min-height:100dvh;margin:
 box-shadow:0 20px 50px -20px rgba(16,24,40,.2);text-align:center}}
 h1{{font-size:20px;margin:0 0 8px}}p{{color:#475467;margin:0 0 20px;line-height:1.6}}
 a{{display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:10px 20px;border-radius:10px}}
-</style></head><body><div class="box"><h1>{}</h1><p>{}</p><a href="/">返回首页</a></div></body></html>"#,
+</style></head><body><div class="box"><h1>{}</h1><p>{}</p><a href="/">@[strings/error_back_home]</a></div></body></html>"#,
         html_escape(title),
         html_escape(msg),
         title = html_escape(title)
     );
-    (status, Html(html)).into_response()
+    (status, Html(crate::strings::apply(&html))).into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -1055,16 +1024,6 @@ mod tests {
         assert_eq!(parse_time("2026-10-24T04:00:00Z"), Some(ts));
         assert_eq!(parse_time("2026-10-24"), Some(ts - 12 * 3600));
         assert!(parse_time("2026-02-30").is_none());
-    }
-
-    #[test]
-    fn relative_and_deadline() {
-        let now = 1_800_000_000;
-        assert_eq!(relative_time(now - 30, now), "刚刚");
-        assert_eq!(relative_time(now - 120, now), "2 分钟前");
-        assert_eq!(deadline_chip(None, now).0, "无截止");
-        assert_eq!(deadline_chip(Some(now - 1), now).0, "已截止");
-        assert_eq!(deadline_chip(Some(now + 2 * 86_400 + 60), now).0, "剩 2 天");
     }
 
     #[test]

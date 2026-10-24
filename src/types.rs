@@ -61,11 +61,11 @@ impl AuthCtx {
     pub fn identity(&self) -> String {
         if self.display_name.trim().is_empty() {
             match self.role.as_str() {
-                ROLE_ADMIN => "管理员".to_string(),
-                ROLE_TEACHER => "老师".to_string(),
+                ROLE_ADMIN => crate::strings::t("identity_admin"),
+                ROLE_TEACHER => crate::strings::t("identity_teacher"),
                 _ => match &self.student_id {
-                    Some(id) => format!("学生 {id}"),
-                    None => "学生".to_string(),
+                    Some(id) => crate::strings::f1("identity_student_id", id),
+                    None => crate::strings::t("identity_student"),
                 },
             }
         } else {
@@ -83,9 +83,11 @@ impl AuthCtx {
 
     pub fn student_no(&self) -> String {
         match (&self.student_id, self.short_id) {
-            (Some(id), Some(short)) => format!("{id} · {short:02} 号"),
+            (Some(id), Some(short)) => {
+                crate::strings::f2("student_no_full", id, format!("{short:02}"))
+            }
             (Some(id), None) => id.clone(),
-            (None, Some(short)) => format!("{short:02} 号"),
+            (None, Some(short)) => crate::strings::f1("student_no_short", format!("{short:02}")),
             _ => String::new(),
         }
     }
@@ -362,8 +364,24 @@ mod tests {
         assert_eq!(p.mode, "mob");
     }
 
+    fn init_test_strings() {
+        if crate::strings::stats().0 == 0 {
+            let path = std::env::temp_dir().join(format!(
+                "smart-campus-types-{}-strings.db",
+                std::process::id()
+            ));
+            let _ = crate::strings::init(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/strings"),
+                &path.to_string_lossy(),
+                "zh-CN",
+            );
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
     #[test]
     fn auth_identity_fallback() {
+        init_test_strings();
         let a = AuthCtx {
             id: "auth".into(),
             key: "k".into(),

@@ -28,8 +28,10 @@ Content-Type: application/json
 失败响应为：
 
 ```json
-{ "ok": false, "msg": "人类可读的错误原因" }
+{ "ok": false, "msg": "human-readable error message" }
 ```
+
+> v0.1.2 起，API 的字段、错误与 `msg` 统一使用英文；页面 UI 文案由 `strings/zh-CN.txt` 提供。
 
 | HTTP | 含义 |
 | --- | --- |
@@ -274,8 +276,7 @@ curl -s http://localhost:3000/api/upload \
       "uploadCount": 2,
       "myUploadCount": 1,
       "pendingCount": 1,
-      "latestUploadID": "up_xxxxxxxxxxxx",
-      "status": "剩 2 天"
+      "latestUploadID": "up_xxxxxxxxxxxx"
     }
   ]
 }
@@ -284,7 +285,7 @@ curl -s http://localhost:3000/api/upload \
 - 学生视角：`uploadCount` 与 `myUploadCount` 都表示本人提交次数；`pendingCount` 表示本人尚未收到回复的提交数。
 - 老师/管理员视角：`uploadCount` 为全班提交数，`pendingCount` 为全班待回复数。
 - `deadLine` 可能为 `null`。
-- `status` 为展示用文案（无截止 / 已截止 / 剩 N 天等）。
+- 时间状态由页面根据 `deadLine` 计算，API 不再返回展示文案。
 
 ---
 
@@ -414,7 +415,7 @@ curl -s http://localhost:3000/api/upload \
 ### 响应
 
 ```json
-{ "ok": true, "msg": "密钥已删除" }
+{ "ok": true, "msg": "key deleted" }
 ```
 
 删除后该密钥立即失效，相关登录会话会在下一次请求时被清除；该 auth 的历史提交会保留（展示提交时的姓名/学号快照）。
@@ -445,7 +446,7 @@ curl -s http://localhost:3000/api/upload \
 {
   "ok": true,
   "name": "林书言",
-  "msg": "身份名称已更新"
+  "msg": "identity name updated"
 }
 ```
 
@@ -487,13 +488,13 @@ curl -s http://localhost:3000/api/rename-auth \
 ### 响应
 
 ```json
-{ "ok": true, "msg": "已删除" }
+{ "ok": true, "msg": "deleted" }
 ```
 
 失败示例：
 
 ```json
-{ "ok": false, "msg": "只能删除当前班级的对象" }
+{ "ok": false, "msg": "you can only delete objects in the current class" }
 ```
 
 ---

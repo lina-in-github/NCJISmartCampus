@@ -10,6 +10,35 @@
   // 基础工具
   // ---------------------------------------------------------------------
 
+  function formatString(template, args) {
+    var out = "";
+    var idx = 0;
+    for (var i = 0; i < template.length; i++) {
+      var c = template.charAt(i);
+      var n = template.charAt(i + 1);
+      if (c === "{" && n === "{") {
+        out += "{";
+        i++;
+      } else if (c === "}" && n === "}") {
+        out += "}";
+        i++;
+      } else if (c === "{" && n === "}") {
+        if (idx < args.length) out += String(args[idx++]);
+        else out += "{}";
+        i++;
+      } else {
+        out += c;
+      }
+    }
+    return out;
+  }
+
+  function S(key) {
+    var source = window.STR || {};
+    var template = Object.prototype.hasOwnProperty.call(source, key) ? source[key] : key;
+    return formatString(template, Array.prototype.slice.call(arguments, 1));
+  }
+
   function $(sel, ctx) {
     return (ctx || document).querySelector(sel);
   }
@@ -57,7 +86,13 @@
       /* ignore */
     }
     if (!res.ok || data.ok === false) {
-      var msg = data.msg || data.message || "请求失败（HTTP " + res.status + "）";
+      // API 返回英文技术信息；界面统一显示本地化提示。
+      if (data.msg || data.message) console.error(data.msg || data.message);
+      var msg;
+      if (res.status === 401) msg = S("flash_login_expired");
+      else if (res.status === 403) msg = S("flash_forbidden");
+      else if (res.status >= 500) msg = S("flash_server_error");
+      else msg = S("flash_request_failed");
       throw new Error(msg);
     }
     return data;
@@ -83,7 +118,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText) {
       return navigator.clipboard.writeText(text).then(
         function () {
-          toast("已复制", "ok");
+          toast(S("toast_copy_ok"), "ok");
           return true;
         },
         function () {
@@ -108,8 +143,8 @@
       ok = false;
     }
     document.body.removeChild(ta);
-    if (ok) toast("已复制", "ok");
-    else toast("复制失败，请手动选择", "error");
+    if (ok) toast(S("toast_copy_ok"), "ok");
+    else toast(S("toast_copy_failed"), "error");
     return Promise.resolve(ok);
   }
 
@@ -125,14 +160,14 @@
     return new Promise(function (resolve) {
       var d = $("#confirm-dialog");
       if (!d || typeof d.showModal !== "function") {
-        resolve(window.confirm(opts.message || opts.title || "确认操作？"));
+        resolve(window.confirm(opts.message || opts.title || S("toast_confirm_default")));
         return;
       }
-      d.querySelector("[data-dialog-title]").textContent = opts.title || "确认操作";
+      d.querySelector("[data-dialog-title]").textContent = opts.title || S("common_confirm_title");
       d.querySelector("[data-dialog-msg]").textContent = opts.message || "";
       var ok = d.querySelector("[data-dialog-confirm]");
       if (ok) {
-        ok.textContent = opts.confirmText || "确定";
+        ok.textContent = opts.confirmText || S("common_confirm");
         ok.className = "btn " + (opts.danger === false ? "primary" : "danger");
       }
       function onClose() {
@@ -160,7 +195,7 @@
     if (btn) {
       btn.setAttribute(
         "aria-label",
-        root.dataset.theme === "dark" ? "切换到浅色模式" : "切换到深色模式"
+        root.dataset.theme === "dark" ? S("common_theme_light") : S("common_theme_dark")
       );
     }
   }
@@ -219,7 +254,7 @@
         var on = keyEl.dataset.revealed === "1";
         keyEl.textContent = on ? masked : full;
         keyEl.dataset.revealed = on ? "0" : "1";
-        revealBtn.textContent = on ? "显示" : "隐藏";
+        revealBtn.textContent = on ? S("common_show") : S("common_hide");
       }
       return;
     }
@@ -232,7 +267,7 @@
       if (img && dlg && typeof dlg.showModal === "function") {
         dlg.querySelector("img").src = img.src;
         dlg.querySelector("[data-lightbox-name]").textContent =
-          lightboxTrigger.getAttribute("data-name") || "附件预览";
+          lightboxTrigger.getAttribute("data-name") || S("common_attachment_preview");
         dlg.showModal();
       }
       return;
@@ -243,18 +278,18 @@
       e.preventDefault();
       e.stopPropagation();
       var id = delBtn.getAttribute("data-del");
-      var name = delBtn.getAttribute("data-name") || "该对象";
+      var name = delBtn.getAttribute("data-name") || S("common_object");
       confirmAction({
-        title: "删除确认",
-        message: "确定删除「" + name + "」吗？此操作不可撤销。",
-        confirmText: "删除",
+        title: S("toast_delete_confirm_title"),
+        message: S("toast_delete_confirm_message", name),
+        confirmText: S("common_delete"),
         danger: true
       }).then(function (ok) {
         if (!ok) return;
         setLoading(delBtn, true);
         api("/api/del-object", { auth: SC.auth, id: id })
           .then(function () {
-            toast("已删除", "ok");
+            toast(S("toast_deleted"), "ok");
             var redirect = delBtn.getAttribute("data-redirect");
             if (redirect) {
               setTimeout(function () {
@@ -300,9 +335,9 @@
     if (form.dataset.confirmed === "1") return;
     e.preventDefault();
     confirmAction({
-      title: "确认操作",
+      title: S("common_confirm_title"),
       message: form.getAttribute("data-confirm"),
-      confirmText: form.getAttribute("data-confirm-text") || "确定",
+      confirmText: form.getAttribute("data-confirm-text") || S("common_confirm"),
       danger: form.getAttribute("data-confirm-danger") !== "0"
     }).then(function (ok) {
       if (ok) {
@@ -359,20 +394,20 @@
       var save = $("#rename-save");
       var name = (renameInput.value || "").trim();
       if (!name) {
-        toast("请输入新名称", "error");
+        toast(S("toast_enter_rename"), "error");
         renameInput.focus();
         return;
       }
       if (!renameKey) {
-        toast("缺少身份信息，请刷新页面重试", "error");
+        toast(S("toast_rename_missing"), "error");
         return;
       }
-      setLoading(save, true, "保存中…");
+      setLoading(save, true, S("toast_saving"));
       try {
         await api("/api/rename-auth", { auth: renameKey, name: name });
-        toast("身份名称已更新", "ok");
+        toast(S("toast_renamed"), "ok");
         setTimeout(function () {
-          location.href = "/user?ok=" + encodeURIComponent("身份名称已更新");
+          location.href = "/user?ok=" + encodeURIComponent(S("toast_renamed"));
         }, 350);
       } catch (err) {
         setLoading(save, false);
@@ -391,7 +426,7 @@
       if (input) {
         input.value = btn.getAttribute("data-demo-key");
         input.focus();
-        toast("已填入演示密钥，点击登录即可", "ok");
+        toast(S("toast_demo_filled"), "ok");
       }
     });
   });
@@ -422,11 +457,11 @@
       var kind = $("#sub-type").value;
       var deadline = noDeadline && noDeadline.checked ? null : deadlineInput.value;
       if (!name) {
-        toast("请填写征集名称", "error");
+        toast(S("toast_submission_name_required"), "error");
         $("#sub-name").focus();
         return;
       }
-      setLoading(btn, true, "发布中…");
+      setLoading(btn, true, S("toast_publishing"));
       try {
         var r = await api("/api/new-submission", {
           auth: SC.auth,
@@ -435,9 +470,10 @@
           type: kind,
           deadLine: deadline ? deadline : null
         });
-        toast("征集已发布", "ok");
+        toast(S("toast_submission_published"), "ok");
         setTimeout(function () {
-          location.href = SC.home + "submissions/?ok=" + encodeURIComponent("征集已发布");
+          location.href =
+            SC.home + "submissions/?ok=" + encodeURIComponent(S("toast_submission_published"));
         }, 300);
         void r;
       } catch (err) {
@@ -500,7 +536,7 @@
         var rm = document.createElement("button");
         rm.type = "button";
         rm.className = "file-remove";
-        rm.setAttribute("aria-label", "移除文件");
+        rm.setAttribute("aria-label", S("file_remove_aria"));
         rm.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
         rm.addEventListener("click", function () {
           picked.splice(i, 1);
@@ -530,7 +566,7 @@
           });
         };
         reader.onerror = function () {
-          reject(new Error("读取文件失败：" + file.name));
+          reject(new Error(S("file_read_failed", file.name)));
         };
         reader.readAsDataURL(file);
       });
@@ -540,17 +576,17 @@
       var list = Array.prototype.slice.call(files || []);
       if (!list.length) return;
       if (picked.length >= MAX_FILES) {
-        toast("最多上传 " + MAX_FILES + " 个附件", "error");
+        toast(S("toast_upload_limit", MAX_FILES), "error");
         return;
       }
       for (var i = 0; i < list.length; i++) {
         if (picked.length >= MAX_FILES) {
-          toast("已达到附件数量上限（" + MAX_FILES + " 个）", "error");
+          toast(S("toast_upload_limit_reached", MAX_FILES), "error");
           break;
         }
         var file = list[i];
         if (file.size + totalBytes() > MAX_TOTAL) {
-          toast("附件总大小不能超过 18MB", "error");
+          toast(S("toast_upload_too_large"), "error");
           continue;
         }
         try {
@@ -595,15 +631,15 @@
       var desc = $("#upload-desc").value.trim();
       var submission = uploadForm.getAttribute("data-submission");
       if (!title) {
-        toast("请填写上传标题", "error");
+        toast(S("toast_upload_title_required"), "error");
         $("#upload-title").focus();
         return;
       }
       if (!submission) {
-        toast("缺少征集信息", "error");
+        toast(S("toast_missing_submission"), "error");
         return;
       }
-      setLoading(btn, true, "提交中…");
+      setLoading(btn, true, S("toast_submitting"));
       try {
         var r = await api("/api/upload", {
           auth: SC.auth,
@@ -614,10 +650,10 @@
             return { name: f.name, mime: f.mime, data: f.data };
           })
         });
-        toast("上传成功", "ok");
+        toast(S("toast_uploaded"), "ok");
         setTimeout(function () {
           location.href =
-            SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent("上传成功");
+            SC.home + "upload/" + r.id + "/?ok=" + encodeURIComponent(S("toast_uploaded"));
         }, 300);
       } catch (err) {
         setLoading(btn, false);
@@ -649,17 +685,17 @@
       var content = (ta.value || "").trim();
       var upload = form.getAttribute("data-upload");
       if (!content) {
-        toast("回复内容不能为空", "error");
+        toast(S("toast_reply_empty"), "error");
         ta.focus();
         return;
       }
-      setLoading(btn, true, "发送中…");
+      setLoading(btn, true, S("toast_sending"));
       try {
         await api("/api/reply", { auth: SC.auth, uploadID: upload, content: content });
-        toast("回复已发布", "ok");
+        toast(S("toast_reply_published"), "ok");
         setTimeout(function () {
           var url = new URL(location.href);
-          url.searchParams.set("ok", "回复已发布");
+          url.searchParams.set("ok", S("toast_reply_published"));
           location.href = url.toString();
         }, 300);
       } catch (err) {
@@ -678,7 +714,7 @@
     exportBtn.addEventListener("click", async function () {
       var submission = exportBtn.getAttribute("data-submission");
       var name = exportBtn.getAttribute("data-name") || "submission";
-      setLoading(exportBtn, true, "导出中…");
+      setLoading(exportBtn, true, S("toast_exporting"));
       try {
         var data = await api("/api/download", {
           auth: SC.auth,
@@ -697,7 +733,7 @@
           URL.revokeObjectURL(a.href);
           a.remove();
         }, 500);
-        toast("已导出 " + (data.datas ? data.datas.length : 0) + " 条数据", "ok");
+        toast(S("toast_exported", data.datas ? data.datas.length : 0), "ok");
       } catch (err) {
         toast(err.message, "error");
       } finally {
@@ -735,14 +771,14 @@
       var quantity = parseInt($("#member-quantity").value, 10);
       var result = $("#member-result");
       if (!option) {
-        toast("请选择管理员身份", "error");
+        toast(S("toast_select_admin"), "error");
         return;
       }
       if (!quantity || quantity < 1 || quantity > 100) {
-        toast("数量需在 1–100 之间", "error");
+        toast(S("toast_quantity_range"), "error");
         return;
       }
-      setLoading(btn, true, "生成中…");
+      setLoading(btn, true, S("toast_generating"));
       try {
         var data = await api("/api/new-user", {
           auth: option.value,
@@ -753,7 +789,7 @@
         if (result) {
           result.hidden = false;
           var title = document.createElement("h4");
-          title.textContent = "本次生成 " + data.keys.length + " 个密钥（请妥善保存，仅显示一次）";
+          title.textContent = S("account_member_generated_title", data.keys.length);
           var list = document.createElement("div");
           list.className = "member-keys";
           (data.members || []).forEach(function (m) {
@@ -766,7 +802,7 @@
             var copy = document.createElement("button");
             copy.type = "button";
             copy.className = "btn ghost sm";
-            copy.textContent = "复制";
+            copy.textContent = S("file_copy");
             copy.setAttribute("data-copy", m.key);
             row.appendChild(tag);
             row.appendChild(code);
@@ -777,7 +813,7 @@
           all.type = "button";
           all.className = "btn outline sm";
           all.style.marginTop = "10px";
-          all.textContent = "复制全部";
+          all.textContent = S("file_copy_all");
           all.addEventListener("click", function () {
             copyText(data.keys.join("\n"));
           });
@@ -786,7 +822,7 @@
           result.appendChild(list);
           result.appendChild(all);
         }
-        toast("已生成 " + data.keys.length + " 个密钥", "ok");
+        toast(S("account_member_generated_toast", data.keys.length), "ok");
       } catch (err) {
         toast(err.message, "error");
       } finally {

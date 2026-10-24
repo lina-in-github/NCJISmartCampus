@@ -14,6 +14,7 @@ use crate::types::AppState;
 mod api;
 mod db;
 mod pages;
+mod strings;
 mod tools;
 mod types;
 mod view;
@@ -48,7 +49,21 @@ async fn static_js() -> Response {
             ),
             (header::CACHE_CONTROL, "no-cache"),
         ],
-        include_str!("assets/app.js"),
+        crate::strings::apply(include_str!("assets/app.js")),
+    )
+        .into_response()
+}
+
+async fn static_strings() -> Response {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        strings::js_object(),
     )
         .into_response()
 }
@@ -66,15 +81,27 @@ async fn favicon() -> Response {
 
 async fn fallback(uri: Uri) -> Response {
     if uri.path().starts_with("/api/") {
-        return tools::api_not_found("接口不存在");
+        return tools::api_not_found("endpoint not found");
     }
-    view::not_found(None, "你访问的页面不存在或已被移动。")
+    view::not_found(None, &strings::t("error_not_found_desc"))
 }
 
 #[tokio::main]
 async fn main() {
+    let strings_dir = std::env::var("SC_STRINGS_DIR").unwrap_or_else(|_| "strings".to_string());
+    let strings_db = std::env::var("SC_STRINGS_DB").unwrap_or_else(|_| "strings.db".to_string());
+    let lang = std::env::var("SC_LANG").unwrap_or_else(|_| "zh-CN".to_string());
+    match strings::init(&strings_dir, &strings_db, &lang) {
+        Ok(Some(warning)) => eprintln!("{warning}"),
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("failed to load UI strings: {e}");
+            std::process::exit(1);
+        }
+    }
+
     let db_path = std::env::var("SC_DB").unwrap_or_else(|_| "smartcampus.db".to_string());
-    let conn = db::open(&db_path).expect("初始化数据库失败");
+    let conn = db::open(&db_path).expect("database initialization failed");
 
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
@@ -117,6 +144,7 @@ async fn main() {
         .route("/api/health", get(api::health))
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
+        .route("/static/strings.js", get(static_strings))
         .route("/favicon.svg", get(favicon))
         .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
         .fallback(fallback)
@@ -129,8 +157,8 @@ async fn main() {
     let bind = std::env::var("SC_BIND").unwrap_or_else(|_| format!("[::]:{port}"));
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
-        .expect("端口绑定失败");
-    let display = if let Some(rest) = bind.strip_prefix("[::]:") {
+        .expect("failed to bind listener");
+    let display = if let Some(rest) = bind.strip_prefix("0.0.0.0:") {
         format!("localhost:{rest}")
     } else if let Some(rest) = bind.strip_prefix("[::]:") {
         format!("localhost:{rest}")
@@ -138,15 +166,17 @@ async fn main() {
         bind.clone()
     };
 
-    println!("智慧校园 · Campus OS");
-    println!("  地址   : http://{display}");
-    println!("  数据库 : {db_path}");
+    let (string_count, string_lang) = strings::stats();
+    println!("{} · Campus OS", strings::t("title"));
+    println!("  Address : http://{display}");
+    println!("  Strings : {string_count} ({string_lang})");
+    println!("  Database: {db_path}");
     println!(
-        "  演示   : 角色密钥 {} / {} / {}",
+        "  Demo    : keys {} / {} / {}",
         db::DEMO_ADMIN_KEY,
         db::DEMO_TEACHER_KEY,
         db::DEMO_STUDENT_KEY
     );
-    println!("          账号 admin/admin123 · teacher/teacher123 · student/student123");
-    axum::serve(listener, app).await.expect("服务器运行失败");
+    println!("            accounts admin/admin123 · teacher/teacher123 · student/student123");
+    axum::serve(listener, app).await.expect("server failed");
 }

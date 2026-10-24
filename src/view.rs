@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 
 use crate::db;
 use crate::tools::{
-    b64_binary_len, deadline_chip, fmt_datetime, fmt_datetime_local, format_size, html_escape,
-    js_json, parse_attachment, relative_time, role_label, truncate_chars,
+    b64_binary_len, fmt_date, fmt_datetime, fmt_datetime_local, format_size, html_escape, js_json,
+    parse_attachment, role_label, truncate_chars,
 };
 use crate::types::{AuthCtx, Prefs, ReplyRow, Session, SubmissionRow, UploadRow, UserCtx};
 
@@ -159,20 +159,59 @@ fn initial(name: &str) -> String {
         .chars()
         .next()
         .map(|c| c.to_string())
-        .unwrap_or_else(|| "校".to_string())
+        .unwrap_or_else(|| crate::strings::t("avatar_fallback"))
 }
 
 fn truncate(s: &str, n: usize) -> String {
     esc(&truncate_chars(s, n))
 }
 
+fn relative_time(ts: i64, now: i64) -> String {
+    let d = now - ts;
+    if d < 0 {
+        fmt_datetime(ts)
+    } else if d < 60 {
+        crate::strings::t("time_just_now")
+    } else if d < 3600 {
+        crate::strings::f1("time_minutes_ago", d / 60)
+    } else if d < 86_400 {
+        crate::strings::f1("time_hours_ago", d / 3600)
+    } else if d < 7 * 86_400 {
+        crate::strings::f1("time_days_ago", d / 86_400)
+    } else {
+        fmt_date(ts)
+    }
+}
+
+fn deadline_chip(deadline: Option<i64>, now: i64) -> (String, &'static str) {
+    let Some(ts) = deadline else {
+        return (crate::strings::t("deadline_none"), "muted");
+    };
+    let d = ts - now;
+    if d <= 0 {
+        (crate::strings::t("deadline_expired"), "danger")
+    } else if d < 3600 {
+        (
+            crate::strings::f1("deadline_minutes", (d / 60).max(1)),
+            "danger",
+        )
+    } else if d < 86_400 {
+        (crate::strings::f1("deadline_hours", d / 3600), "warn")
+    } else {
+        (crate::strings::f1("deadline_days", d / 86_400), "ok")
+    }
+}
+
 fn type_label(kind: &str) -> String {
     match kind.trim().to_ascii_lowercase().as_str() {
-        "homework" => "作业".to_string(),
-        "open call" | "open_call" | "opencall" => "公开征集".to_string(),
-        "leave request" | "leave_request" | "leaverequest" => "请假申请".to_string(),
-        "notice" => "通知".to_string(),
-        "" => "征集".to_string(),
+        "homework" => crate::strings::t("type_homework"),
+        "open call" | "open_call" | "opencall" => crate::strings::t("type_open_call"),
+        "leave request" | "leave_request" | "leaverequest" => {
+            crate::strings::t("type_leave_request")
+        }
+        "notice" => crate::strings::t("type_notice"),
+        "other" => crate::strings::t("type_other"),
+        "" => crate::strings::t("type_generic"),
         other => truncate_chars(other, 14),
     }
 }
@@ -205,15 +244,15 @@ fn deadline_badge(deadline: Option<i64>, now: i64) -> String {
 fn upload_status(upload: &UploadRow) -> String {
     if upload.reply_count > 0 {
         format!(
-            r#"<span class="chip ok">{}{} 条回复</span>"#,
+            r#"<span class="chip ok">{}{}</span>"#,
             icon("check-circle"),
-            upload.reply_count
+            crate::strings::f1("uploads_status_replies", upload.reply_count)
         )
     } else {
         format!(
             r#"<span class="chip warn">{}{}</span>"#,
             icon("clock"),
-            "待回复"
+            "@[strings/uploads_status_pending]"
         )
     }
 }
@@ -222,7 +261,7 @@ fn role_badge_text(role: &str) -> String {
     let cls = role_class(role);
     format!(
         r#"<span class="role-badge {cls}">{}</span>"#,
-        esc(role_label(role))
+        esc(&role_label(role))
     )
 }
 
@@ -310,13 +349,13 @@ impl LayoutCtx {
 
     pub fn account(user: &UserCtx, prefs: &Prefs, flash: Flash) -> Self {
         Self {
-            title: "账号中心".to_string(),
+            title: "@[strings/role_account]".to_string(),
             mode: prefs.mode.clone(),
             page_role: "student".to_string(),
             role: "student".to_string(),
             active: "user".to_string(),
-            class_name: "个人账号".to_string(),
-            class_desc: "管理身份、密钥与偏好设置".to_string(),
+            class_name: "@[strings/common_personal_account]".to_string(),
+            class_desc: "@[strings/common_account_desc]".to_string(),
             display_name: if user.display_name.trim().is_empty() {
                 user.username.clone()
             } else {
@@ -341,9 +380,9 @@ impl LayoutCtx {
         }
     }
 
-    fn user_label(&self) -> &'static str {
+    fn user_label(&self) -> String {
         if self.is_account {
-            "账号中心"
+            crate::strings::t("role_account")
         } else {
             role_label(&self.page_role)
         }
@@ -361,14 +400,14 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
     if ctx.is_account {
         let mut items = vec![NavItem {
             key: "user",
-            label: "账号中心",
+            label: "@[strings/role_account]",
             href: "/user".to_string(),
             icon: "user",
         }];
         if !ctx.auth_id.is_empty() {
             items.push(NavItem {
                 key: "home",
-                label: "返回首页",
+                label: "@[strings/common_back_home]",
                 href: "/home".to_string(),
                 icon: "home",
             });
@@ -376,9 +415,9 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
         items.push(NavItem {
             key: "login",
             label: if ctx.auth_id.is_empty() {
-                "身份登录"
+                "@[strings/common_identity_login]"
             } else {
-                "切换身份"
+                "@[strings/common_switch_identity]"
             },
             href: "/login".to_string(),
             icon: "lock",
@@ -387,20 +426,20 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
     }
     let base = ctx.base();
     let uploads_label = match ctx.page_role.as_str() {
-        "parent" => "孩子提交",
-        "student" => "我的上传",
-        _ => "提交管理",
+        "parent" => "@[strings/nav_uploads_parent]",
+        "student" => "@[strings/nav_uploads_self]",
+        _ => "@[strings/nav_uploads_staff]",
     };
     let mut items = vec![
         NavItem {
             key: "home",
-            label: "首页",
+            label: "@[strings/nav_home]",
             href: base.clone(),
             icon: "home",
         },
         NavItem {
             key: "submissions",
-            label: "征集",
+            label: "@[strings/type_generic]",
             href: format!("{base}submissions/"),
             icon: "inbox",
         },
@@ -412,7 +451,7 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
         },
         NavItem {
             key: "user",
-            label: "账号",
+            label: "@[strings/nav_account]",
             href: "/user".to_string(),
             icon: "user",
         },
@@ -420,7 +459,7 @@ fn nav_items(ctx: &LayoutCtx) -> Vec<NavItem> {
     if ctx.role == "teacher" || ctx.role == "admin" {
         items.push(NavItem {
             key: "submissions_new",
-            label: "发布征集",
+            label: "@[strings/nav_publish]",
             href: format!("{base}submissions/new"),
             icon: "plus",
         });
@@ -433,7 +472,7 @@ fn flash_html(flash: &Flash) -> String {
     if let Some(ok) = &flash.ok {
         let _ = write!(
             out,
-            r#"<div class="flash ok" role="status">{}{}<button type="button" class="flash-close" data-flash-close aria-label="关闭">×</button></div>"#,
+            r#"<div class="flash ok" role="status">{}{}<button type="button" class="flash-close" data-flash-close aria-label="@[strings/common_close]">×</button></div>"#,
             icon("check-circle"),
             esc(ok)
         );
@@ -441,7 +480,7 @@ fn flash_html(flash: &Flash) -> String {
     if let Some(err) = &flash.err {
         let _ = write!(
             out,
-            r#"<div class="flash err" role="alert">{}{}<button type="button" class="flash-close" data-flash-close aria-label="关闭">×</button></div>"#,
+            r#"<div class="flash err" role="alert">{}{}<button type="button" class="flash-close" data-flash-close aria-label="@[strings/common_close]">×</button></div>"#,
             icon("alert"),
             esc(err)
         );
@@ -465,21 +504,22 @@ const THEME_BOOT: &str = r#"<script>(function(){try{var p=localStorage.getItem('
 fn document_head(title: &str, theme: &str, with_app_css: bool) -> String {
     format!(
         r##"<!doctype html>
-<html lang="zh-CN" data-pref="{theme}">
+<html lang="{lang}" data-pref="{theme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#4f46e5">
-<title>{title} · 智慧校园</title>
+<title>{title} · @[strings/title]</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 {theme_boot}
 {css}
 </head>"##,
         theme = esc(theme),
         title = esc(title),
+        lang = esc(&crate::strings::current_lang()),
         theme_boot = THEME_BOOT,
         css = if with_app_css {
-            r#"<link rel="stylesheet" href="/static/app.css?v=3">"#
+            r#"<link rel="stylesheet" href="/static/app.css?v=4">"#
         } else {
             ""
         }
@@ -491,42 +531,42 @@ fn page_footer(scripts: &str, with_app: bool) -> String {
         r#"<div class="toast-wrap" aria-live="polite"></div>
 <dialog id="confirm-dialog" class="dialog">
   <form method="dialog" class="dialog-card">
-    <h3 class="dialog-title" data-dialog-title>确认操作</h3>
+    <h3 class="dialog-title" data-dialog-title>@[strings/common_confirm_title]</h3>
     <p class="dialog-msg" data-dialog-msg></p>
     <div class="dialog-actions">
-      <button class="btn outline" value="cancel" formnovalidate>取消</button>
-      <button class="btn danger" value="ok" data-dialog-confirm formnovalidate>确定</button>
+      <button class="btn outline" value="cancel" formnovalidate>@[strings/common_cancel]</button>
+      <button class="btn danger" value="ok" data-dialog-confirm formnovalidate>@[strings/common_confirm]</button>
     </div>
   </form>
 </dialog>
 <dialog id="rename-dialog" class="dialog">
   <form class="dialog-card" id="rename-form">
-    <h3 class="dialog-title">为身份改名</h3>
-    <p class="dialog-msg">新名称会显示在该班级的提交、回复与页面身份信息中。</p>
+    <h3 class="dialog-title">@[strings/account_rename_title]</h3>
+    <p class="dialog-msg">@[strings/account_rename_desc]</p>
     <div class="field">
-      <label class="label" for="rename-input">新名称</label>
+      <label class="label" for="rename-input">@[strings/account_rename_label]</label>
       <input class="input" id="rename-input" type="text" maxlength="40" autocomplete="off" required>
-      <span class="hint">1–40 个字符，改名会同步刷新该身份的历史显示名称。</span>
+      <span class="hint">@[strings/account_rename_hint]</span>
     </div>
     <div class="dialog-actions">
-      <button class="btn outline" type="button" id="rename-cancel">取消</button>
-      <button class="btn primary" type="submit" id="rename-save">保存</button>
+      <button class="btn outline" type="button" id="rename-cancel">@[strings/common_cancel]</button>
+      <button class="btn primary" type="submit" id="rename-save">@[strings/common_save]</button>
     </div>
   </form>
 </dialog>
 <dialog id="lightbox" class="lightbox">
   <div class="lightbox-bar">
-    <span data-lightbox-name>附件预览</span>
-    <form method="dialog"><button class="icon-btn" value="close" aria-label="关闭">×</button></form>
+    <span data-lightbox-name>@[strings/common_attachment_preview]</span>
+    <form method="dialog"><button class="icon-btn" value="close" aria-label="@[strings/common_close]">×</button></form>
   </div>
-  <img alt="附件预览">
+  <img alt="@[strings/common_attachment_preview]">
 </dialog>
 {}
 {}
 </body>
 </html>"#,
         if with_app {
-            r#"<script src="/static/app.js?v=3"></script>"#
+            r#"<script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script>"#
         } else {
             ""
         },
@@ -582,19 +622,19 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
 
     let class_block = if ctx.is_account {
         format!(
-            r#"<div class="side-class"><span class="eyebrow">ACCOUNT</span><strong>{}</strong><span>{}</span></div>"#,
+            r#"<div class="side-class"><span class="eyebrow">@[strings/layout_account]</span><strong>{}</strong><span>{}</span></div>"#,
             esc(&ctx.class_name),
             esc(&ctx.class_desc)
         )
     } else {
         format!(
-            r#"<div class="side-class"><span class="eyebrow">CURRENT CLASS</span><strong>{}</strong><span>{} · {}</span>{}</div>"#,
+            r#"<div class="side-class"><span class="eyebrow">@[strings/layout_current_class]</span><strong>{}</strong><span>{} · {}</span>{}</div>"#,
             esc(&ctx.class_name),
-            esc(ctx.user_label()),
+            esc(&ctx.user_label()),
             if ctx.student_label.is_empty() {
-                "班级空间"
+                "@[strings/layout_class_space]"
             } else {
-                "学生身份"
+                "@[strings/layout_student_identity]"
             },
             if ctx.student_label.is_empty() {
                 String::new()
@@ -624,13 +664,13 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         r#"<body class="fade-in">
 <div class="app-shell">
   <aside class="sidebar">
-    <a class="brand" href="{home}" aria-label="智慧校园首页">
+    <a class="brand" href="{home}" aria-label="@[strings/layout_brand_home]">
       <span class="brand-mark">{logo}</span>
-      <span class="brand-text"><strong>智慧校园</strong><small>Campus OS</small></span>
+      <span class="brand-text"><strong>@[strings/title]</strong><small>@[strings/brand_tagline]</small></span>
     </a>
     {class_block}
-    <nav class="side-nav" aria-label="主导航">
-      <span class="side-nav-label">空间导航</span>
+    <nav class="side-nav" aria-label="@[strings/layout_main_nav]">
+      <span class="side-nav-label">@[strings/layout_space_nav]</span>
       {side_nav}
     </nav>
     <div class="side-foot">
@@ -639,7 +679,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         <span class="who"><strong>{display}</strong><span>{role}</span></span>
       </a>
       <form method="post" action="/logout" class="inline-form">
-        <button class="side-logout" type="submit" title="退出登录" aria-label="退出登录">{logout}</button>
+        <button class="side-logout" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
       </form>
     </div>
   </aside>
@@ -651,12 +691,12 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
       </div>
       <div class="topbar-actions">
         <span class="role-chip"><span class="dot"></span>{role}</span>
-        <a class="icon-btn" href="/user" title="账号中心" aria-label="账号中心">{user_icon}</a>
-        <button class="icon-btn" id="theme-toggle" type="button" title="切换主题" aria-label="切换主题">
+        <a class="icon-btn" href="/user" title="@[strings/role_account]" aria-label="@[strings/role_account]">{user_icon}</a>
+        <button class="icon-btn" id="theme-toggle" type="button" title="@[strings/common_theme_toggle]" aria-label="@[strings/common_theme_toggle]">
           <span class="icon-moon">{moon}</span><span class="icon-sun">{sun}</span>
         </button>
         <form method="post" action="/logout" class="inline-form desktop-only">
-          <button class="icon-btn" type="submit" title="退出登录" aria-label="退出登录">{logout}</button>
+          <button class="icon-btn" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
         </form>
       </div>
     </header>
@@ -664,7 +704,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
       {flash}
       {body}
     </main>
-    <nav class="bottom-nav" aria-label="底部导航">{bottom_nav}</nav>
+    <nav class="bottom-nav" aria-label="@[strings/layout_bottom_nav]">{bottom_nav}</nav>
   </div>
 </div>
 <script>window.SC = {sc};</script>
@@ -680,7 +720,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         },
         initial = esc(&initial(&ctx.display_name)),
         display = esc(&ctx.display_name),
-        role = esc(user_role_label),
+        role = esc(&user_role_label),
         logout = icon("logout"),
         class_name = esc(&ctx.class_name),
         title = esc(&ctx.title),
@@ -704,7 +744,7 @@ fn auth_brand(mobile: bool) -> String {
     format!(
         r#"<a class="auth-brand{auth_mobile}" href="/login">
   <span class="brand-mark">{logo}</span>
-  <span class="auth-brand-text"><strong>智慧校园</strong><span>CAMPUS OS</span></span>
+  <span class="auth-brand-text"><strong>@[strings/title]</strong><span>@[strings/brand_tagline_upper]</span></span>
 </a>"#,
         auth_mobile = if mobile { " auth-mobile-brand" } else { "" },
         logo = icon("graduation")
@@ -717,9 +757,9 @@ fn mode_switch(mode: &str, role: Option<&str>) -> String {
         None => format!("/login?mode={m}"),
     };
     format!(
-        r#"<div class="mode-switch" role="group" aria-label="视图模式">
-  <a class="mode-pill{mob}" href="{mob_href}">{phone}手机版</a>
-  <a class="mode-pill{pc}" href="{pc_href}">{desktop}电脑版</a>
+        r#"<div class="mode-switch" role="group" aria-label="@[strings/common_view_mode]">
+  <a class="mode-pill{mob}" href="{mob_href}">{phone}@[strings/common_mobile]</a>
+  <a class="mode-pill{pc}" href="{pc_href}">{desktop}@[strings/common_desktop]</a>
 </div>"#,
         mob = if mode == "mob" { " active" } else { "" },
         pc = if mode == "pc" { " active" } else { "" },
@@ -733,21 +773,21 @@ fn mode_switch(mode: &str, role: Option<&str>) -> String {
 fn auth_hero(kind: &str) -> String {
     let (title, desc, features) = match kind {
         "account" => (
-            "一个账号，连接<br><em>每一个班级身份</em>",
-            "绑定多个班级密钥，随时切换家长、老师或管理员视角。管理偏好设置，查看自己拥有的全部身份。",
+            "@[strings/login_hero_account_title]",
+            "@[strings/login_hero_account_desc]",
             vec![
-                ("shield", "HttpOnly 会话"),
-                ("key", "多班级密钥"),
-                ("settings", "偏好设置"),
+                ("shield", "@[strings/login_feature_session]"),
+                ("key", "@[strings/login_feature_keys]"),
+                ("settings", "@[strings/login_feature_prefs]"),
             ],
         ),
         _ => (
-            "让每一次提交，<br>都被<em>认真看见</em>",
-            "面向班级的征集、提交与回复工作台。家长、老师和管理员共享同一套清晰的数据，却拥有各自恰到好处的视角。",
+            "@[strings/login_hero_login_title]",
+            "@[strings/login_hero_login_desc]",
             vec![
-                ("megaphone", "班级征集"),
-                ("folder", "附件归档"),
-                ("reply", "及时回复"),
+                ("megaphone", "@[strings/login_feature_class]"),
+                ("folder", "@[strings/login_feature_files]"),
+                ("reply", "@[strings/login_feature_reply]"),
             ],
         ),
     };
@@ -765,12 +805,12 @@ fn auth_hero(kind: &str) -> String {
         r#"<section class="auth-hero" aria-hidden="true">
   <div>{brand}</div>
   <div class="auth-hero-main">
-    <span class="hero-eyebrow">{spark} SMART CAMPUS</span>
+    <span class="hero-eyebrow">{spark} @[strings/login_hero_eyebrow]</span>
     <h1>{title}</h1>
     <p>{desc}</p>
     <div class="auth-features">{features}</div>
   </div>
-  <div class="auth-hero-foot"><span>智慧校园 · Campus OS</span><span>2026</span></div>
+  <div class="auth-hero-foot"><span>@[strings/brand_footer]</span><span>@[strings/login_hero_year]</span></div>
 </section>"#,
         brand = auth_brand(false),
         spark = icon("sparkles"),
@@ -801,11 +841,11 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
 
     let demo_keys = format!(
         r#"<details class="demo-keys">
-  <summary>演示环境 · 一键复制密钥</summary>
+  <summary>@[strings/login_demo_summary]</summary>
   <div class="demo-key-list">
-    <div class="demo-key"><span>家长 / 学生</span><code>{stu}</code><button class="btn ghost sm" type="button" data-copy="{stu}">{copy}</button></div>
-    <div class="demo-key"><span>老师</span><code>{tea}</code><button class="btn ghost sm" type="button" data-copy="{tea}">{copy}</button></div>
-    <div class="demo-key"><span>管理员</span><code>{adm}</code><button class="btn ghost sm" type="button" data-copy="{adm}">{copy}</button></div>
+    <div class="demo-key"><span>@[strings/login_demo_parent_student]</span><code>{stu}</code><button class="btn ghost sm" type="button" data-copy="{stu}">{copy}</button></div>
+    <div class="demo-key"><span>@[strings/role_teacher]</span><code>{tea}</code><button class="btn ghost sm" type="button" data-copy="{tea}">{copy}</button></div>
+    <div class="demo-key"><span>@[strings/role_admin]</span><code>{adm}</code><button class="btn ghost sm" type="button" data-copy="{adm}">{copy}</button></div>
   </div>
 </details>"#,
         stu = db::DEMO_STUDENT_KEY,
@@ -821,23 +861,23 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
     <div class="auth-card">
       {mobile_brand}
       <div class="auth-topline">
-        <span class="eyebrow">选择你的身份</span>
+        <span class="eyebrow">@[strings/login_choose_identity]</span>
         {mode_switch}
       </div>
       {flash}
       <div class="auth-heading">
-        <h2>欢迎回到智慧校园</h2>
-        <p>请选择进入班级空间的身份，每种身份使用对应的班级密钥登录。</p>
+        <h2>@[strings/login_welcome]</h2>
+        <p>@[strings/login_welcome_desc]</p>
       </div>
       <div class="role-grid">
         {parent}
         {teacher}
         {admin}
       </div>
-      <div class="auth-divider">或</div>
-      <a class="auth-mini-link" href="/user">{user_icon}进入账号中心（用户名 / 密码登录）</a>
+      <div class="auth-divider">@[strings/common_or]</div>
+      <a class="auth-mini-link" href="/user">{user_icon}@[strings/login_account_center]</a>
       {demo_keys}
-      <p class="hint" style="margin-top:16px;text-align:center">家长与学生共用孩子的学生密钥 · 密钥即身份，请勿转发</p>
+      <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_footer_note]</p>
     </div>
   </section>
 </div>"#,
@@ -846,22 +886,22 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
         mode_switch = mode_switch(mode, None),
         parent = role_card(
             "parent",
-            "家长",
-            "查看孩子的提交、回复与班级征集",
+            "@[strings/role_parent]",
+            "@[strings/login_parent_desc]",
             "users",
             ""
         ),
         teacher = role_card(
             "teacher",
-            "老师",
-            "发布征集、批阅提交、写回复",
+            "@[strings/role_teacher]",
+            "@[strings/login_teacher_desc]",
             "book",
             "sky"
         ),
         admin = role_card(
             "admin",
-            "管理员",
-            "管理班级、成员与全部内容",
+            "@[strings/role_admin]",
+            "@[strings/login_admin_desc]",
             "shield",
             "amber"
         ),
@@ -870,8 +910,8 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
         flash = flash_html(flash)
     );
 
-    let mut out = document_head("登录", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
+    let mut out = document_head("@[strings/login_submit]", "system", true);
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
     out
 }
 
@@ -879,42 +919,42 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
     let mode = if mode == "pc" { "pc" } else { "mob" };
     let (title, desc, icon_name, icon_class, demo_key, placeholder) = match role {
         "parent" => (
-            "家长登录",
-            "使用孩子的学生密钥进入班级，查看征集、提交与老师回复。",
+            "@[strings/login_parent_page_title]",
+            "@[strings/login_parent_page_desc]",
             "users",
             "",
             db::DEMO_STUDENT_KEY,
-            "例如 SC-STU-XXXX-XXXX",
+            "@[strings/login_placeholder]",
         ),
         "teacher" => (
-            "老师登录",
-            "使用教师密钥登录，发布征集、查看全班提交并写回复。",
+            "@[strings/login_teacher_page_title]",
+            "@[strings/login_teacher_page_desc]",
             "book",
             "sky",
             db::DEMO_TEACHER_KEY,
-            "例如 SC-TEA-XXXX-XXXX",
+            "@[strings/login_placeholder_teacher]",
         ),
         "admin" => (
-            "管理员登录",
-            "使用管理员密钥登录，管理班级、成员、征集与全部内容。",
+            "@[strings/login_admin_page_title]",
+            "@[strings/login_admin_page_desc]",
             "shield",
             "amber",
             db::DEMO_ADMIN_KEY,
-            "例如 SC-ADM-XXXX-XXXX",
+            "@[strings/login_placeholder_admin]",
         ),
         _ => (
-            "学生登录",
-            "使用学生密钥进入班级空间，上传作业与查看回复。",
+            "@[strings/login_student_page_title]",
+            "@[strings/login_student_page_desc]",
             "graduation",
             "",
             db::DEMO_STUDENT_KEY,
-            "例如 SC-STU-XXXX-XXXX",
+            "@[strings/login_placeholder]",
         ),
     };
     let demo_label = match role {
-        "teacher" => "老师演示密钥",
-        "admin" => "管理员演示密钥",
-        _ => "学生 / 家长演示密钥",
+        "teacher" => "@[strings/login_demo_teacher]",
+        "admin" => "@[strings/login_demo_admin]",
+        _ => "@[strings/login_demo_parent]",
     };
 
     let role_links = ["parent", "teacher", "admin"]
@@ -948,7 +988,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
     <div class="auth-card">
       {mobile_brand}
       <div class="auth-topline">
-        <a class="back-link" href="/login">{arrow}返回身份选择</a>
+        <a class="back-link" href="/login">{arrow}@[strings/login_back_identity]</a>
         {mode_switch}
       </div>
       <div class="auth-heading">
@@ -959,26 +999,26 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
       {error_html}
       <form class="login-form" method="post" action="/login/{mode}/{role}">
         <div class="field">
-          <label class="label" for="key-input">班级密钥 <span class="req">*</span></label>
+          <label class="label" for="key-input">@[strings/login_key_label] <span class="req">*</span></label>
           <input class="input mono" id="key-input" name="key" type="text" autocomplete="off"
                  spellcheck="false" placeholder="{placeholder}" required autofocus>
-          <span class="hint">每个密钥只对应一个班级。需要切换班级时，请切换到该班级的密钥。</span>
+          <span class="hint">@[strings/login_key_hint]</span>
         </div>
-        <button class="btn primary block" type="submit">{login_icon}登录</button>
+        <button class="btn primary block" type="submit">{login_icon}@[strings/login_submit]</button>
         <details class="demo-keys">
           <summary>{demo_label}</summary>
           <div class="demo-key-list">
             <button class="demo-key" type="button" data-demo-key="{demo_key}">
-              <span>{demo_label}</span><code>{demo_key}</code><span>点击填入</span>
+              <span>{demo_label}</span><code>{demo_key}</code><span>@[strings/common_click_fill]</span>
             </button>
           </div>
         </details>
       </form>
-      <div class="auth-divider">其他身份</div>
+      <div class="auth-divider">@[strings/login_other_identity]</div>
       <div class="mode-switch" style="width:100%;justify-content:space-between">{role_links}</div>
-      <div class="auth-divider">或</div>
-      <a class="auth-mini-link" href="/user">{user_icon}账号中心（用户名 / 密码登录）</a>
-      <p class="hint" style="margin-top:16px;text-align:center">登入即表示你已获得该班级密钥的授权。</p>
+      <div class="auth-divider">@[strings/common_or]</div>
+      <a class="auth-mini-link" href="/user">{user_icon}@[strings/login_account_center_link]</a>
+      <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_authorized_note]</p>
     </div>
   </section>
 </div>"#,
@@ -1002,7 +1042,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
     );
 
     let mut out = document_head(title, "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
     out
 }
 
@@ -1019,26 +1059,26 @@ fn submission_card_link(
 ) -> String {
     let href = format!("{base}submission/{}/", row.id);
     let count_label = if staff {
-        format!("{} 份提交", row.upload_count)
+        crate::strings::f1("submissions_count_staff", row.upload_count)
     } else if row.my_upload_count == 0 {
         if parent {
-            "孩子尚未提交".to_string()
+            crate::strings::t("submissions_child_not_submitted")
         } else {
-            "尚未提交".to_string()
+            crate::strings::t("submissions_not_submitted")
         }
     } else if parent {
-        format!("孩子已提交 {} 次", row.my_upload_count)
+        crate::strings::f1("submissions_count_child", row.my_upload_count)
     } else {
-        format!("已提交 {} 次", row.my_upload_count)
+        crate::strings::f1("submissions_count_own", row.my_upload_count)
     };
     let desc = if row.desc.trim().is_empty() {
-        "暂无描述".to_string()
+        crate::strings::t("common_no_description")
     } else {
         truncate(&row.desc, 90)
     };
     format!(
         r#"<article class="card hover submission-card fade-in">
-  <a class="card-link" href="{href}" aria-label="打开征集 {name}"></a>
+  <a class="card-link" href="{href}" aria-label="@[strings/common_open]@[strings/type_generic] {name}"></a>
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
     {deadline}
@@ -1072,26 +1112,26 @@ fn submission_card_manage(
 ) -> String {
     let href = format!("{base}submission/{}/", row.id);
     let count_label = if staff {
-        format!("{} 份提交", row.upload_count)
+        crate::strings::f1("submissions_count_staff", row.upload_count)
     } else if row.my_upload_count == 0 {
         if parent {
-            "孩子尚未提交".to_string()
+            crate::strings::t("submissions_child_not_submitted")
         } else {
-            "尚未提交".to_string()
+            crate::strings::t("submissions_not_submitted")
         }
     } else if parent {
-        format!("孩子已提交 {} 次", row.my_upload_count)
+        crate::strings::f1("submissions_count_child", row.my_upload_count)
     } else {
-        format!("已提交 {} 次", row.my_upload_count)
+        crate::strings::f1("submissions_count_own", row.my_upload_count)
     };
     let desc = if row.desc.trim().is_empty() {
-        "暂无描述".to_string()
+        crate::strings::t("common_no_description")
     } else {
         truncate(&row.desc, 110)
     };
     let pending = if staff && row.pending_count > 0 {
         format!(
-            r#"<span class="chip warn">{}{} 待回复</span>"#,
+            r#"<span class="chip warn">{}{} @[strings/uploads_status_pending]</span>"#,
             icon("clock"),
             row.pending_count
         )
@@ -1100,7 +1140,7 @@ fn submission_card_manage(
     };
     let delete = if admin {
         format!(
-            r#"<button class="btn danger sm" type="button" data-del="{id}" data-name="{name}">{trash}删除</button>"#,
+            r#"<button class="btn danger sm" type="button" data-del="{id}" data-name="{name}">{trash}@[strings/common_delete]</button>"#,
             id = esc(&row.id),
             name = esc(&row.name),
             trash = icon("trash")
@@ -1138,11 +1178,11 @@ fn submission_card_manage(
         pending = pending,
         arrow = icon("arrow-right"),
         action_label = if staff {
-            "打开"
+            "@[strings/common_open]"
         } else if row.my_upload_count == 0 {
-            "去提交"
+            "@[strings/common_go_submit]"
         } else {
-            "查看"
+            "@[strings/common_view]"
         },
         delete = delete
     )
@@ -1170,7 +1210,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
     };
     format!(
         r#"<div class="list-row fade-in">
-  <a class="card-link" href="{href}" aria-label="查看提交 {title}"></a>
+  <a class="card-link" href="{href}" aria-label="@[strings/common_view]@[strings/page_uploads] {title}"></a>
   <span class="avatar sm{avatar_class}">{initial}</span>
   <div class="row-main">
     <div class="row-title">{title}</div>
@@ -1214,43 +1254,43 @@ pub fn home(
     let base = ctx.base();
     let (eyebrow, hero_title, hero_desc) = match ctx.page_role.as_str() {
         "parent" => (
-            "PARENT SPACE",
-            format!("您好，<em>{}</em>的家长", esc(&ctx.display_name)),
-            "孩子的每一次提交与老师的每一条回复，都在这里清晰呈现。".to_string(),
+            "@[strings/home_eyebrow_parent]",
+            crate::strings::f1("home_title_parent", esc(&ctx.display_name)),
+            "@[strings/home_desc_parent]".to_string(),
         ),
         "teacher" => (
-            "TEACHER DESK",
-            "把每一个反馈，<br>送到学生手里。".to_string(),
-            "发布班级征集、批阅学生提交、写下一条有温度的回复。".to_string(),
+            "@[strings/home_eyebrow_teacher]",
+            "@[strings/home_title_teacher]".to_string(),
+            "@[strings/home_desc_teacher]".to_string(),
         ),
         "admin" => (
-            "ADMIN CONSOLE",
-            "让班级的每件事，<br>都有迹可循。".to_string(),
-            "管理征集与提交，处理成员与班级，掌握班级空间的实时动态。".to_string(),
+            "@[strings/home_eyebrow_admin]",
+            "@[strings/home_title_admin]".to_string(),
+            "@[strings/home_desc_admin]".to_string(),
         ),
         _ => (
-            "STUDENT SPACE",
-            "把每一次提交，<br>变成成长的刻度。".to_string(),
-            "查看班级征集、上传你的作品，并收下老师的每一条回复。".to_string(),
+            "@[strings/home_eyebrow_student]",
+            "@[strings/home_title_student]".to_string(),
+            "@[strings/home_desc_student]".to_string(),
         ),
     };
     let hero_actions = match ctx.page_role.as_str() {
         "teacher" | "admin" => format!(
-            r#"<a class="btn light" href="{base}submissions/new">{plus}发布征集</a><a class="btn glass" href="{base}uploads/">{folder}提交管理</a><a class="btn glass" href="/user">{user}账号</a>"#,
+            r#"<a class="btn light" href="{base}submissions/new">{plus}@[strings/nav_publish]</a><a class="btn glass" href="{base}uploads/">{folder}@[strings/nav_uploads_staff]</a><a class="btn glass" href="/user">{user}@[strings/nav_account]</a>"#,
             base = base,
             plus = icon("plus"),
             folder = icon("folder"),
             user = icon("user")
         ),
         "parent" => format!(
-            r#"<a class="btn light" href="{base}submissions/">{inbox}浏览征集</a><a class="btn glass" href="{base}uploads/">{folder}孩子提交</a><a class="btn glass" href="/user">{user}账号</a>"#,
+            r#"<a class="btn light" href="{base}submissions/">{inbox}@[strings/home_action_browse]</a><a class="btn glass" href="{base}uploads/">{folder}@[strings/nav_uploads_parent]</a><a class="btn glass" href="/user">{user}@[strings/nav_account]</a>"#,
             base = base,
             inbox = icon("inbox"),
             folder = icon("folder"),
             user = icon("user")
         ),
         _ => format!(
-            r#"<a class="btn light" href="{base}submissions/">{inbox}浏览征集</a><a class="btn glass" href="{base}uploads/">{folder}我的上传</a><a class="btn glass" href="/user">{user}账号</a>"#,
+            r#"<a class="btn light" href="{base}submissions/">{inbox}@[strings/home_action_browse]</a><a class="btn glass" href="{base}uploads/">{folder}@[strings/nav_uploads_self]</a><a class="btn glass" href="/user">{user}@[strings/nav_account]</a>"#,
             base = base,
             inbox = icon("inbox"),
             folder = icon("folder"),
@@ -1273,7 +1313,7 @@ pub fn home(
 
     let submissions_html = if submissions.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">还没有征集</div><div class="empty-desc">当前班级还没有发布任何征集，稍后再来看看吧。</div></div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/home_empty_submissions_title]</div><div class="empty-desc">@[strings/home_empty_submissions_desc]</div></div>"#,
             icon = icon("inbox")
         )
     } else {
@@ -1294,7 +1334,7 @@ pub fn home(
 
     let uploads_html = if uploads.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">暂时没有需要关注的提交</div><div class="empty-desc">{hint}</div></div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/home_empty_uploads_title]</div><div class="empty-desc">{hint}</div></div>"#,
             icon = icon("folder"),
             hint = esc(uploads_hint)
         )
@@ -1307,15 +1347,15 @@ pub fn home(
     };
 
     let float_title = match ctx.page_role.as_str() {
-        "teacher" => "待回复提交",
-        "admin" => "班级动态",
-        "parent" => "孩子的最近提交",
-        _ => "我的最近提交",
+        "teacher" => "@[strings/home_float_pending]",
+        "admin" => "@[strings/home_float_admin]",
+        "parent" => "@[strings/home_float_parent]",
+        _ => "@[strings/home_float_self]",
     };
     let float_sub = match ctx.page_role.as_str() {
-        "teacher" => "优先处理未回复的提交",
-        "admin" => "全部内容尽在掌握",
-        _ => "点击即可查看回复",
+        "teacher" => "@[strings/home_float_pending_sub]",
+        "admin" => "@[strings/home_float_admin_sub]",
+        _ => "@[strings/home_float_default_sub]",
     };
 
     let body = format!(
@@ -1339,15 +1379,15 @@ pub fn home(
 <div class="stats">{stats_html}</div>
 <section class="section">
   <div class="section-head">
-    <h2 class="section-title">{inbox}最近的征集</h2>
-    <a class="section-link" href="{base}submissions/">查看全部{arrow}</a>
+    <h2 class="section-title">{inbox}@[strings/home_recent_submissions]</h2>
+    <a class="section-link" href="{base}submissions/">@[strings/common_view_all]{arrow}</a>
   </div>
   {submissions_html}
 </section>
 <section class="section">
   <div class="section-head">
     <h2 class="section-title">{folder}{uploads_title}</h2>
-    <a class="section-link" href="{base}uploads/">查看全部{arrow}</a>
+    <a class="section-link" href="{base}uploads/">@[strings/common_view_all]{arrow}</a>
   </div>
   {uploads_html}
 </section>"#,
@@ -1359,7 +1399,7 @@ pub fn home(
         hero_actions = hero_actions,
         float_title = float_title,
         float_sub = float_sub,
-        role_label = esc(role_label(&ctx.page_role)),
+        role_label = esc(&role_label(&ctx.page_role)),
         class_name = esc(&ctx.class_name),
         stats_html = stats_html,
         inbox = icon("inbox"),
@@ -1385,7 +1425,7 @@ pub fn submissions(
     let base = ctx.base();
     let new_btn = if staff {
         format!(
-            r#"<a class="btn primary" href="{base}submissions/new">{plus}发布征集</a>"#,
+            r#"<a class="btn primary" href="{base}submissions/new">{plus}@[strings/nav_publish]</a>"#,
             base = base,
             plus = icon("plus")
         )
@@ -1394,10 +1434,12 @@ pub fn submissions(
     };
     let content = if rows.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">还没有征集</div><div class="empty-desc">老师发布征集后，会在这里展示。你提交过的内容也会自动关联到对应征集。</div>{new_btn}</div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/home_empty_submissions_title]</div><div class="empty-desc">@[strings/submissions_empty_desc]</div>{new_btn}</div>"#,
             icon = icon("inbox"),
             new_btn = if staff {
-                format!(r#"<a class="btn primary" href="{base}submissions/new">发布第一个征集</a>"#)
+                format!(
+                    r#"<a class="btn primary" href="{base}submissions/new">@[strings/submissions_publish_first]</a>"#
+                )
             } else {
                 String::new()
             }
@@ -1411,23 +1453,24 @@ pub fn submissions(
             .collect();
         format!(r#"<div class="card-grid">{cards}</div>"#)
     };
+    let unit = if staff {
+        crate::strings::t("submissions_unit_class")
+    } else if parent {
+        crate::strings::t("submissions_unit_child")
+    } else {
+        crate::strings::t("submissions_unit_person")
+    };
+    let page_sub = crate::strings::f2("submissions_page_sub", rows.len(), unit);
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <h2 class="page-title">班级征集</h2>
-    <p class="page-sub">{count} 个征集 · 单位：{unit}</p>
+    <h2 class="page-title">@[strings/submissions_page_title]</h2>
+    <p class="page-sub">{page_sub}</p>
   </div>
   <div class="page-actions">{new_btn}</div>
 </div>
 {content}"#,
-        count = rows.len(),
-        unit = if staff {
-            "班级"
-        } else if parent {
-            "孩子"
-        } else {
-            "本人"
-        },
+        page_sub = page_sub,
         new_btn = new_btn,
         content = content
     );
@@ -1440,65 +1483,65 @@ pub fn new_submission(ctx: &LayoutCtx) -> String {
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <a class="back-link" href="{base}submissions/">{arrow}返回征集列表</a>
-    <h2 class="page-title" style="margin-top:6px">发布新征集</h2>
-    <p class="page-sub">征集会立即出现在班级空间，学生与家长可以查看并提交。</p>
+    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
+    <h2 class="page-title" style="margin-top:6px">@[strings/new_page_title]</h2>
+    <p class="page-sub">@[strings/new_subtitle]</p>
   </div>
 </div>
 <div class="detail-grid">
   <form class="form-card" id="submission-form">
     <div class="form-grid">
       <div class="field full">
-        <label class="label" for="sub-name">征集名称 <span class="req">*</span></label>
+        <label class="label" for="sub-name">@[strings/new_name_label] <span class="req">*</span></label>
         <input class="input" id="sub-name" name="name" type="text" maxlength="200" required
-               placeholder="例如：函数与导数 · 周末练习">
+               placeholder="@[strings/new_name_placeholder]">
       </div>
       <div class="field">
-        <label class="label" for="sub-type">类型</label>
+        <label class="label" for="sub-type">@[strings/new_type_label]</label>
         <select class="select" id="sub-type" name="type">
-          <option value="homework">作业</option>
-          <option value="open call">公开征集</option>
-          <option value="leave request">请假申请</option>
-          <option value="notice">通知</option>
-          <option value="other">其他</option>
+          <option value="homework">@[strings/type_homework]</option>
+          <option value="open call">@[strings/type_open_call]</option>
+          <option value="leave request">@[strings/type_leave_request]</option>
+          <option value="notice">@[strings/type_notice]</option>
+          <option value="other">@[strings/type_other]</option>
         </select>
       </div>
       <div class="field">
-        <label class="label" for="sub-deadline">截止时间</label>
+        <label class="label" for="sub-deadline">@[strings/new_deadline_label]</label>
         <input class="input" id="sub-deadline" name="deadline" type="datetime-local" value="{default_deadline}">
-        <label class="check"><input type="checkbox" id="no-deadline"> 不设置截止时间</label>
+        <label class="check"><input type="checkbox" id="no-deadline"> @[strings/new_no_deadline]</label>
       </div>
       <div class="field full">
-        <label class="label" for="sub-desc">说明</label>
+        <label class="label" for="sub-desc">@[strings/new_desc_label]</label>
         <textarea class="textarea" id="sub-desc" name="desc" maxlength="2000"
-                  placeholder="写清楚提交要求、格式与注意事项，学生会在详情页看到这段说明。"></textarea>
+                  placeholder="@[strings/new_desc_placeholder]"></textarea>
         <span class="hint" data-counter="sub-desc" data-max="2000">0 / 2000</span>
       </div>
     </div>
     <div class="form-actions">
-      <button class="btn primary" type="submit" id="submission-submit">{plus}发布征集</button>
-      <a class="btn ghost" href="{base}submissions/">取消</a>
+      <button class="btn primary" type="submit" id="submission-submit">{plus}@[strings/nav_publish]</button>
+      <a class="btn ghost" href="{base}submissions/">@[strings/common_cancel]</a>
       <span class="spacer"></span>
-      <span class="hint">发布身份：{display}</span>
+      <span class="hint">@[strings/new_publish_identity]：{display}</span>
     </div>
   </form>
   <aside class="stack">
     <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{spark}发布小贴士</h3></div>
+      <div class="panel-head"><h3 class="panel-title">{spark}@[strings/new_tips_title]</h3></div>
       <div class="panel-body">
         <div class="stack text-sm" style="color:var(--text-2)">
-          <p>1. 名称尽量具体，包含学科、主题或活动名称。</p>
-          <p>2. 截止时间按北京时间显示，学生端会实时提示剩余时间。</p>
-          <p>3. 学生可多次上传；老师可以在提交详情中逐条回复。</p>
-          <p>4. 发布后管理员可以删除该征集，请确认内容无误。</p>
+          <p>@[strings/new_tip1]</p>
+          <p>@[strings/new_tip2]</p>
+          <p>@[strings/new_tip3]</p>
+          <p>@[strings/new_tip4]</p>
         </div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-body">
-        <div class="kv"><dt>当前班级</dt><dd>{class_name}</dd></div>
-        <div class="kv"><dt>发布身份</dt><dd>{role}</dd></div>
-        <div class="kv"><dt>数据范围</dt><dd>管理员 / 老师 · 全班</dd></div>
+        <div class="kv"><dt>@[strings/new_current_class]</dt><dd>{class_name}</dd></div>
+        <div class="kv"><dt>@[strings/new_publish_identity]</dt><dd>{role}</dd></div>
+        <div class="kv"><dt>@[strings/new_data_scope]</dt><dd>@[strings/new_data_scope_value]</dd></div>
       </div>
     </div>
   </aside>
@@ -1510,7 +1553,7 @@ pub fn new_submission(ctx: &LayoutCtx) -> String {
         display = esc(&ctx.display_name),
         spark = icon("sparkles"),
         class_name = esc(&ctx.class_name),
-        role = esc(role_label(&ctx.role))
+        role = esc(&role_label(&ctx.role))
     );
     layout(ctx, &body)
 }
@@ -1526,58 +1569,58 @@ pub fn uploads(
     let base = ctx.base();
     let parent = ctx.page_role == "parent";
     let title = if staff {
-        "班级提交"
+        "@[strings/uploads_title_staff]"
     } else if parent {
-        "孩子的提交"
+        "@[strings/uploads_title_parent]"
     } else {
-        "我的提交"
+        "@[strings/stat_my_uploads]"
     };
     let sub = if staff {
-        "查看全班提交，及时给每一份作品写下回复。".to_string()
+        "@[strings/uploads_sub_staff]".to_string()
     } else if parent {
-        "孩子上传过的全部内容都在这里，可按征集回溯。".to_string()
+        "@[strings/uploads_sub_parent]".to_string()
     } else {
-        "你上传过的所有内容都在这里，可按征集回溯。".to_string()
+        "@[strings/uploads_sub_self]".to_string()
     };
     let tabs = if staff {
         format!(
             r#"<div class="segmented" role="tablist">
-  <a class="segment{all}" href="{base}uploads/?filter=all">全部 {c0}</a>
-  <a class="segment{pending}" href="{base}uploads/?filter=pending">待回复 {c1}</a>
-  <a class="segment{replied}" href="{base}uploads/?filter=replied">已回复 {c2}</a>
+  <a class="segment{all}" href="{base}uploads/?filter=all">{all_label}</a>
+  <a class="segment{pending}" href="{base}uploads/?filter=pending">{pending_label}</a>
+  <a class="segment{replied}" href="{base}uploads/?filter=replied">{replied_label}</a>
 </div>"#,
             all = if filter == "all" { " active" } else { "" },
             pending = if filter == "pending" { " active" } else { "" },
             replied = if filter == "replied" { " active" } else { "" },
             base = base,
-            c0 = counts.0,
-            c1 = counts.1,
-            c2 = counts.2
+            all_label = crate::strings::f1("uploads_tab_all", counts.0),
+            pending_label = crate::strings::f1("uploads_tab_pending", counts.1),
+            replied_label = crate::strings::f1("uploads_tab_replied", counts.2)
         )
     } else {
         format!(
-            r#"<span class="chip soft">{}{} 次提交</span>"#,
+            r#"<span class="chip soft">{}{}</span>"#,
             icon("folder"),
-            rows.len()
+            crate::strings::f1("uploads_count_own", rows.len())
         )
     };
     let content = if rows.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">{empty_title}</div><div class="empty-desc">{empty_desc}</div><a class="btn primary" href="{base}submissions/">去征集列表看看</a></div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">{empty_title}</div><div class="empty-desc">{empty_desc}</div><a class="btn primary" href="{base}submissions/">@[strings/uploads_go]</a></div>"#,
             icon = icon("folder"),
             empty_title = if filter == "pending" {
-                "没有待回复的提交"
+                "@[strings/uploads_empty_pending]"
             } else if filter == "replied" {
-                "还没有已回复的提交"
+                "@[strings/uploads_empty_replied]"
             } else {
-                "还没有提交"
+                "@[strings/uploads_empty_all]"
             },
             empty_desc = if staff {
-                "学生上传后，这里会实时出现新的提交。"
+                "@[strings/uploads_empty_desc_staff]"
             } else if parent {
-                "孩子尚未提交过内容，可以从征集列表开始。"
+                "@[strings/uploads_empty_desc_parent]"
             } else {
-                "选择一个征集，上传你的作业或作品吧。"
+                "@[strings/uploads_empty_desc_self]"
             },
             base = base
         )
@@ -1614,7 +1657,7 @@ pub fn submission_all(
     let can_upload = true;
     let export = if staff {
         format!(
-            r#"<button class="btn outline" type="button" id="export-btn" data-submission="{id}" data-name="{name}">{download}导出 JSON</button>"#,
+            r#"<button class="btn outline" type="button" id="export-btn" data-submission="{id}" data-name="{name}">{download}@[strings/submission_all_export]</button>"#,
             id = esc(&sub.id),
             name = esc(&sub.name),
             download = icon("download")
@@ -1624,7 +1667,7 @@ pub fn submission_all(
     };
     let delete = if admin {
         format!(
-            r#"<button class="btn danger" type="button" data-del="{id}" data-name="{name}" data-redirect="{base}submissions/">{trash}删除征集</button>"#,
+            r#"<button class="btn danger" type="button" data-del="{id}" data-name="{name}" data-redirect="{base}submissions/">{trash}@[strings/submission_all_delete]</button>"#,
             id = esc(&sub.id),
             name = esc(&sub.name),
             base = base,
@@ -1635,7 +1678,7 @@ pub fn submission_all(
     };
     let upload_btn = if can_upload {
         format!(
-            r#"<a class="btn primary" href="{base}submission/{id}/upload">{upload}上传作品</a>"#,
+            r#"<a class="btn primary" href="{base}submission/{id}/upload">{upload}@[strings/page_upload]</a>"#,
             base = base,
             id = esc(&sub.id),
             upload = icon("upload")
@@ -1645,18 +1688,18 @@ pub fn submission_all(
     };
     let list = if rows.is_empty() {
         format!(
-            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">还没有提交</div><div class="empty-desc">{desc}</div>{upload_btn}</div>"#,
+            r#"<div class="empty"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/uploads_empty_all]</div><div class="empty-desc">{desc}</div>{upload_btn}</div>"#,
             icon = icon("folder"),
             desc = if staff {
-                "学生提交后会显示在这里。"
+                "@[strings/submission_all_empty_staff]"
             } else if ctx.page_role == "parent" {
-                "孩子还没有为这个征集上传内容。"
+                "@[strings/submission_all_empty_parent]"
             } else {
-                "你还没有为这个征集上传内容。"
+                "@[strings/submission_all_empty_self]"
             },
             upload_btn = if can_upload {
                 format!(
-                    r#"<a class="btn primary" href="{base}submission/{id}/upload">上传第一份作品</a>"#,
+                    r#"<a class="btn primary" href="{base}submission/{id}/upload">@[strings/submission_all_upload_first]</a>"#,
                     base = base,
                     id = esc(&sub.id)
                 )
@@ -1674,9 +1717,9 @@ pub fn submission_all(
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <a class="back-link" href="{base}submissions/">{arrow}返回征集列表</a>
+    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
     <h2 class="page-title" style="margin-top:6px">{name}</h2>
-    <p class="page-sub">{created_name} 发布 · {created}</p>
+    <p class="page-sub">{created_name} @[strings/page_publish] · {created}</p>
   </div>
   <div class="page-actions">{upload_btn}{export}{delete}</div>
 </div>
@@ -1688,7 +1731,7 @@ pub fn submission_all(
   <p style="color:var(--text-2);font-size:13.5px;line-height:1.75;margin-top:4px">{desc}</p>
   <div class="submission-meta">
     <span class="meta-item">{file_icon}<span>{count_label}</span></span>
-    <span class="meta-item">{clock_icon}<span>发布于 {created}</span></span>
+    <span class="meta-item">{clock_icon}<span>{published}</span></span>
     {pending}
   </div>
 </section>
@@ -1710,20 +1753,21 @@ pub fn submission_all(
         type_label = esc(&type_label(&sub.kind)),
         deadline = deadline_badge(sub.deadline, now),
         desc = if sub.desc.trim().is_empty() {
-            "暂无说明".to_string()
+            "@[strings/submission_all_no_desc]".to_string()
         } else {
             esc(&sub.desc)
         },
         file_icon = icon("file"),
         count_label = if staff {
-            format!("{} 份提交", sub.upload_count)
+            crate::strings::f1("submissions_count_staff", sub.upload_count)
         } else {
-            format!("已提交 {} 次", sub.my_upload_count)
+            crate::strings::f1("submissions_count_own", sub.my_upload_count)
         },
         clock_icon = icon("clock"),
+        published = crate::strings::f1("submission_all_published", fmt_datetime(sub.created_at)),
         pending = if staff && sub.pending_count > 0 {
             format!(
-                r#"<span class="chip warn">{}{} 待回复</span>"#,
+                r#"<span class="chip warn">{}{} @[strings/uploads_status_pending]</span>"#,
                 icon("clock"),
                 sub.pending_count
             )
@@ -1732,15 +1776,19 @@ pub fn submission_all(
         },
         folder = icon("folder"),
         list_title = if staff {
-            "全部提交"
+            "@[strings/submission_all_list_staff]"
+        } else if ctx.page_role == "parent" {
+            "@[strings/submission_all_list_parent]"
         } else {
-            "我的提交"
+            "@[strings/submission_all_list_self]"
         },
         n = rows.len(),
         list_hint = if staff {
-            "点击任意提交查看附件并回复"
+            "@[strings/submission_all_hint_staff]"
+        } else if ctx.page_role == "parent" {
+            "@[strings/submission_all_hint_parent]"
         } else {
-            "仅显示你自己的提交"
+            "@[strings/submission_all_hint_self]"
         },
         list = list
     );
@@ -1759,19 +1807,19 @@ pub fn upload_form(
     let parent = ctx.page_role == "parent";
     let existing_hint = if existing > 0 {
         if parent {
-            format!("孩子已为这个征集提交过 {existing} 次，本次会作为新的上传保留。")
+            crate::strings::f1("upload_form_existing_parent", existing)
         } else {
-            format!("你已为这个征集提交过 {existing} 次，本次会作为新的上传保留。")
+            crate::strings::f1("upload_form_existing", existing)
         }
     } else if parent {
-        "这是孩子在本次征集的第一次提交。".to_string()
+        crate::strings::t("upload_form_first_parent")
     } else {
-        "这是你在本征集的第一次提交。".to_string()
+        crate::strings::t("upload_form_first")
     };
     let last_link = last_id
         .map(|id| {
             format!(
-                r#" <a href="{base}upload/{id}/">查看上一次提交</a>"#,
+                r#" <a href="{base}upload/{id}/">@[strings/upload_form_last_link]</a>"#,
                 base = base,
                 id = esc(id)
             )
@@ -1780,46 +1828,46 @@ pub fn upload_form(
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <a class="back-link" href="{base}submission/{id}/">{arrow}返回征集详情</a>
-    <h2 class="page-title" style="margin-top:6px">上传到「{name}」</h2>
-    <p class="page-sub">支持图片、PDF 与常见文档，单个上传最多 8 个附件、总计约 18MB。</p>
+    <a class="back-link" href="{base}submission/{id}/">{arrow}@[strings/upload_back_submission]</a>
+    <h2 class="page-title" style="margin-top:6px">{page_title}</h2>
+    <p class="page-sub">@[strings/upload_form_subtitle]</p>
   </div>
 </div>
 <div class="detail-grid">
   <form class="form-card" id="upload-form" data-submission="{id}">
     <div class="form-grid">
       <div class="field full">
-        <label class="label" for="upload-title">标题 <span class="req">*</span></label>
+        <label class="label" for="upload-title">@[strings/upload_form_title_label] <span class="req">*</span></label>
         <input class="input" id="upload-title" type="text" maxlength="200" required value="{default_title}">
-        <span class="hint">给这份提交一个清晰的名字，方便老师批阅。</span>
+        <span class="hint">@[strings/upload_form_title_hint]</span>
       </div>
       <div class="field full">
-        <label class="label" for="upload-desc">说明</label>
+        <label class="label" for="upload-desc">@[strings/new_desc_label]</label>
         <textarea class="textarea" id="upload-desc" maxlength="5000"
-                  placeholder="补充说明、解题思路、遇到的问题……"></textarea>
+                  placeholder="@[strings/upload_form_desc_placeholder]"></textarea>
         <span class="hint" data-counter="upload-desc" data-max="5000">0 / 5000</span>
       </div>
       <div class="field full">
-        <label class="label">附件</label>
+        <label class="label">@[strings/common_attachment]</label>
         <div class="dropzone" id="dropzone">
           <input type="file" id="file-input" multiple>
           <span class="dropzone-icon">{upload}</span>
-          <span class="dropzone-text">拖拽文件到这里，或 <span>点击选择文件</span></span>
-          <span class="dropzone-hint">图片 / PDF / 文档 · 最多 8 个 · 总计 18MB</span>
+          <span class="dropzone-text">@[strings/upload_form_drop]</span>
+          <span class="dropzone-hint">@[strings/upload_form_drop_hint]</span>
         </div>
         <div class="file-list" id="file-list"></div>
       </div>
     </div>
     <div class="form-actions">
-      <button class="btn primary" type="submit" id="upload-submit">{send}提交</button>
-      <a class="btn ghost" href="{base}submission/{id}/">取消</a>
+      <button class="btn primary" type="submit" id="upload-submit">{send}@[strings/page_uploads]</button>
+      <a class="btn ghost" href="{base}submission/{id}/">@[strings/common_cancel]</a>
       <span class="spacer"></span>
       <span class="hint">{existing_hint}{last_link}</span>
     </div>
   </form>
   <aside class="stack">
     <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{folder}征集信息</h3></div>
+      <div class="panel-head"><h3 class="panel-title">{folder}@[strings/upload_form_submission_info]</h3></div>
       <div class="panel-body">
         <div class="stack">
           <div><span class="chip type">{type_label}</span> {deadline}</div>
@@ -1827,13 +1875,13 @@ pub fn upload_form(
           <p class="text-sm" style="color:var(--text-2);line-height:1.7">{desc}</p>
         </div>
         <div class="divider"></div>
-        <div class="kv"><dt>发布人</dt><dd>{created_name}</dd></div>
-        <div class="kv"><dt>发布时间</dt><dd>{created}</dd></div>
-        <div class="kv"><dt>截止时间</dt><dd>{deadline_text}</dd></div>
+        <div class="kv"><dt>@[strings/upload_form_publisher]</dt><dd>{created_name}</dd></div>
+        <div class="kv"><dt>@[strings/upload_form_published_at]</dt><dd>{created}</dd></div>
+        <div class="kv"><dt>@[strings/new_deadline_label]</dt><dd>{deadline_text}</dd></div>
       </div>
     </div>
     <div class="account-note">
-      提示：截止后仍可补交，老师会看到每次提交的时间。
+      @[strings/upload_form_tip]
     </div>
   </aside>
 </div>"#,
@@ -1841,6 +1889,7 @@ pub fn upload_form(
         arrow = icon("arrow-left"),
         id = esc(&sub.id),
         name = esc(&sub.name),
+        page_title = esc(&crate::strings::f1("upload_form_page_title", &sub.name)),
         default_title = esc(&default_title),
         upload = icon("upload"),
         send = icon("send"),
@@ -1850,7 +1899,7 @@ pub fn upload_form(
         type_label = esc(&type_label(&sub.kind)),
         deadline = deadline_badge(sub.deadline, now),
         desc = if sub.desc.trim().is_empty() {
-            "暂无说明".to_string()
+            "@[strings/submission_all_no_desc]".to_string()
         } else {
             esc(&sub.desc)
         },
@@ -1859,7 +1908,7 @@ pub fn upload_form(
         deadline_text = sub
             .deadline
             .map(fmt_datetime)
-            .unwrap_or_else(|| "不设截止时间".to_string())
+            .unwrap_or_else(|| "@[strings/time_no_deadline]".to_string())
     );
     layout(ctx, &body)
 }
@@ -1870,10 +1919,10 @@ pub fn upload_form(
 
 fn attachment_gallery(data: &Value) -> String {
     let Some(arr) = data.as_array() else {
-        return r#"<p class="hint">该上传没有附件。</p>"#.to_string();
+        return r#"<p class="hint">@[strings/upload_no_attachments]</p>"#.to_string();
     };
     if arr.is_empty() {
-        return r#"<p class="hint">该上传没有附件。</p>"#.to_string();
+        return r#"<p class="hint">@[strings/upload_no_attachments]</p>"#.to_string();
     }
     let mut out = String::from(r#"<div class="attachment-grid">"#);
     for item in arr {
@@ -1881,14 +1930,21 @@ fn attachment_gallery(data: &Value) -> String {
             continue;
         };
         let size = format_size(b64_binary_len(&att.b64));
-        let name = esc(&att.name);
+        let display_name = if att.name == "Attachment" {
+            crate::strings::t("common_attachment")
+        } else if let Some(rest) = att.name.strip_prefix("Attachment ") {
+            crate::strings::f1("common_attachment_n", rest)
+        } else {
+            att.name.clone()
+        };
+        let name = esc(&display_name);
         let mime = esc(&att.mime);
         if att.mime.starts_with("image/") {
             let src = format!("data:{};base64,{}", att.mime, att.b64);
             let _ = write!(
                 out,
                 r#"<div class="attachment">
-  <div class="attachment-thumb" role="button" tabindex="0" data-lightbox data-name="{name}" aria-label="预览附件 {name}">
+  <div class="attachment-thumb" role="button" tabindex="0" data-lightbox data-name="{name}" aria-label="{preview_aria}">
     <img src="{src}" alt="{name}">
   </div>
   <div class="attachment-caption">
@@ -1897,6 +1953,7 @@ fn attachment_gallery(data: &Value) -> String {
   </div>
 </div>"#,
                 name = name,
+                preview_aria = esc(&crate::strings::f1("upload_preview_aria", &display_name)),
                 src = esc(&src),
                 mime = mime,
                 size = size
@@ -1931,12 +1988,12 @@ fn attachment_gallery(data: &Value) -> String {
 fn replies_html(replies: &[ReplyRow], admin: bool, now: i64) -> String {
     if replies.is_empty() {
         return format!(
-            r#"<div class="empty" style="padding:30px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">还没有回复</div><div class="empty-desc">{desc}</div></div>"#,
+            r#"<div class="empty" style="padding:30px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/upload_reply_empty_title]</div><div class="empty-desc">{desc}</div></div>"#,
             icon = icon("reply"),
             desc = if admin {
-                "写下第一条回复，让学生收到反馈。"
+                "@[strings/upload_reply_empty_staff]"
             } else {
-                "老师回复后会显示在这里。"
+                "@[strings/upload_reply_empty_student]"
             }
         );
     }
@@ -1944,7 +2001,7 @@ fn replies_html(replies: &[ReplyRow], admin: bool, now: i64) -> String {
     for r in replies {
         let delete = if admin {
             format!(
-                r#"<button class="btn ghost sm" type="button" data-del="{id}" data-name="回复">{trash}删除</button>"#,
+                r#"<button class="btn ghost sm" type="button" data-del="{id}" data-name="@[strings/upload_replies]">{trash}@[strings/common_delete]</button>"#,
                 id = esc(&r.id),
                 trash = icon("trash")
             )
@@ -1992,16 +2049,16 @@ pub fn upload_detail(
         format!(
             r#"<form class="reply-form" data-reply-form data-upload="{upload_id}">
   <div class="quick-replies">
-    <button class="quick-reply" type="button" data-quick-reply="已完成，步骤清晰，继续保持！">已完成</button>
-    <button class="quick-reply" type="button" data-quick-reply="请补充解题过程，并标注关键步骤。">请补充过程</button>
-    <button class="quick-reply" type="button" data-quick-reply="已收到，稍后为你详细批注。">已收到</button>
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_done_text]">@[strings/upload_quick_done]</button>
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_supplement_text]">@[strings/upload_quick_supplement]</button>
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_received_text]">@[strings/upload_quick_received]</button>
   </div>
   <div class="field">
-    <textarea class="textarea" name="content" maxlength="5000" placeholder="写下对这份提交的回复……" required></textarea>
+    <textarea class="textarea" name="content" maxlength="5000" placeholder="@[strings/upload_reply_placeholder]" required></textarea>
   </div>
   <div class="form-actions" style="margin-top:12px;padding-top:12px">
-    <button class="btn primary" type="submit">{send}发布回复</button>
-    <span class="hint">回复会立即展示给提交人和家长</span>
+    <button class="btn primary" type="submit">{send}@[strings/upload_reply_publish]</button>
+    <span class="hint">@[strings/upload_reply_note]</span>
   </div>
 </form>"#,
             upload_id = esc(&upload.id),
@@ -2009,19 +2066,19 @@ pub fn upload_detail(
         )
     } else {
         format!(
-            r#"<div class="account-note">{} 只有老师和管理员可以回复这份提交。</div>"#,
+            r#"<div class="account-note">{} @[strings/upload_reply_only_staff]</div>"#,
             icon("lock")
         )
     };
     let reupload = format!(
-        r#"<a class="btn outline block" href="{base}submission/{sub_id}/upload">{upload}重新上传</a>"#,
+        r#"<a class="btn outline block" href="{base}submission/{sub_id}/upload">{upload}@[strings/upload_reupload]</a>"#,
         base = base,
         sub_id = esc(&upload.submission_id),
         upload = icon("upload")
     );
     let delete_upload = if admin {
         format!(
-            r#"<button class="btn danger block" type="button" data-del="{id}" data-name="{title}" data-redirect="{base}submission/{sub_id}/all">{trash}删除本次提交</button>"#,
+            r#"<button class="btn danger block" type="button" data-del="{id}" data-name="{title}" data-redirect="{base}submission/{sub_id}/all">{trash}@[strings/upload_delete]</button>"#,
             id = esc(&upload.id),
             title = esc(&upload.title),
             base = base,
@@ -2034,10 +2091,10 @@ pub fn upload_detail(
     let student_row = if upload.student_id.is_some() {
         let short = upload
             .short_id
-            .map(|n| format!(" · {n:02} 号"))
+            .map(|n| crate::strings::f1("common_student_no_suffix", format!("{n:02}")))
             .unwrap_or_default();
         format!(
-            r#"<div class="kv"><dt>学号</dt><dd>{}{}</dd></div>"#,
+            r#"<div class="kv"><dt>@[strings/upload_info_student_no]</dt><dd>{}{}</dd></div>"#,
             esc(upload.student_id.as_deref().unwrap_or("")),
             esc(&short)
         )
@@ -2047,20 +2104,20 @@ pub fn upload_detail(
     let body = format!(
         r#"<div class="page-head">
   <div>
-    <a class="back-link" href="{base}submission/{sub_id}/all">{arrow}返回「{sub_name}」全部提交</a>
+    <a class="back-link" href="{base}submission/{sub_id}/all">{arrow}{back_label}</a>
     <h2 class="page-title" style="margin-top:6px">{title}</h2>
     <p class="page-sub">{uploader} · {created}</p>
   </div>
   <div class="page-actions">
     {status}
-    <a class="btn outline" href="{base}submission/{sub_id}/all">{folder}查看征集</a>
+    <a class="btn outline" href="{base}submission/{sub_id}/all">{folder}@[strings/upload_view_submission]</a>
   </div>
 </div>
 <div class="detail-grid">
   <div class="detail-main">
     <div class="panel">
       <div class="panel-head">
-        <h3 class="panel-title">{paperclip}附件与内容</h3>
+        <h3 class="panel-title">{paperclip}@[strings/upload_attachments_title]</h3>
         <span class="hint">{time}</span>
       </div>
       <div class="panel-body">
@@ -2071,8 +2128,8 @@ pub fn upload_detail(
     </div>
     <div class="panel">
       <div class="panel-head">
-        <h3 class="panel-title">{reply}回复<span class="count">{reply_count}</span></h3>
-        <span class="hint">老师 / 管理员</span>
+        <h3 class="panel-title">{reply}@[strings/upload_replies]<span class="count">{reply_count}</span></h3>
+        <span class="hint">@[strings/upload_reply_role_hint]</span>
       </div>
       <div class="panel-body">
         {replies}
@@ -2083,22 +2140,22 @@ pub fn upload_detail(
   </div>
   <aside class="detail-side">
     <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{user}提交信息</h3></div>
+      <div class="panel-head"><h3 class="panel-title">{user}@[strings/upload_info_title]</h3></div>
       <div class="panel-body">
-        <div class="kv"><dt>提交人</dt><dd>{uploader}</dd></div>
-        <div class="kv"><dt>身份</dt><dd>{role_badge}</dd></div>
+        <div class="kv"><dt>@[strings/upload_info_uploader]</dt><dd>{uploader}</dd></div>
+        <div class="kv"><dt>@[strings/upload_info_role]</dt><dd>{role_badge}</dd></div>
         {student_row}
-        <div class="kv"><dt>征集</dt><dd><a href="{base}submission/{sub_id}/">{sub_name}</a></dd></div>
-        <div class="kv"><dt>提交时间</dt><dd>{created}</dd></div>
+        <div class="kv"><dt>@[strings/type_generic]</dt><dd><a href="{base}submission/{sub_id}/">{sub_name}</a></dd></div>
+        <div class="kv"><dt>@[strings/upload_info_submitted_at]</dt><dd>{created}</dd></div>
         {last_reply_row}
-        <div class="kv"><dt>回复数量</dt><dd>{reply_count}</dd></div>
+        <div class="kv"><dt>@[strings/upload_info_reply_count]</dt><dd>{reply_count}</dd></div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-body stack">
         {reupload}
         {delete_upload}
-        <a class="btn ghost block" href="{base}uploads/">{back}返回提交列表</a>
+        <a class="btn ghost block" href="{base}uploads/">{back}@[strings/upload_back_list]</a>
       </div>
     </div>
     <div class="account-note">
@@ -2109,6 +2166,7 @@ pub fn upload_detail(
         base = base,
         sub_id = esc(&sub.id),
         sub_name = esc(&sub.name),
+        back_label = esc(&crate::strings::f1("upload_back_all", &sub.name)),
         arrow = icon("arrow-left"),
         title = esc(&upload.title),
         uploader = esc(&upload.uploader_name),
@@ -2118,7 +2176,7 @@ pub fn upload_detail(
         paperclip = icon("paperclip"),
         time = esc(&relative_time(upload.created_at, now)),
         desc = if upload.desc.trim().is_empty() {
-            r#"<p class="hint">提交人没有填写说明。</p>"#.to_string()
+            r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string()
         } else {
             format!(
                 r#"<p style="color:var(--text-2);line-height:1.8;white-space:pre-wrap">{}</p>"#,
@@ -2136,7 +2194,7 @@ pub fn upload_detail(
         last_reply_row = upload
             .last_reply_at
             .map(|ts| format!(
-                r#"<div class="kv"><dt>最近回复</dt><dd>{}</dd></div>"#,
+                r#"<div class="kv"><dt>@[strings/upload_info_last_reply]</dt><dd>{}</dd></div>"#,
                 esc(&relative_time(ts, now))
             ))
             .unwrap_or_default(),
@@ -2149,9 +2207,9 @@ pub fn upload_detail(
         delete_upload = delete_upload,
         back = icon("arrow-left"),
         note = if staff {
-            "提示：回复发出后不可编辑，请确认内容后提交。"
+            "@[strings/upload_tip_staff]"
         } else {
-            "提示：你可以在截止后补交，老师会看到每次提交的时间。"
+            "@[strings/upload_tip_student]"
         }
     );
     layout(ctx, &body)
@@ -2184,50 +2242,50 @@ pub fn user_guest(
     <div class="auth-card wide">
       {mobile_brand}
       <div class="auth-topline">
-        <a class="back-link" href="/login">{arrow}返回角色登录</a>
+        <a class="back-link" href="/login">{arrow}@[strings/account_back_login]</a>
         {mode_switch}
       </div>
       <div class="auth-heading">
-        <h2>账号中心</h2>
-        <p>使用用户名与密码登录，管理你绑定的班级身份与个人偏好。</p>
+        <h2>@[strings/role_account]</h2>
+        <p>@[strings/account_login_desc]</p>
       </div>
       {flash}
       {note}
       <div class="login-pair" style="grid-template-columns:minmax(0,1fr)">
         <form class="login-form" method="post" action="/user/login">
           <div class="field">
-            <label class="label" for="username">用户名</label>
+            <label class="label" for="username">@[strings/account_username]</label>
             <input class="input" id="username" name="username" type="text" autocomplete="username" required>
           </div>
           <div class="field">
-            <label class="label" for="password">密码</label>
+            <label class="label" for="password">@[strings/account_password]</label>
             <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
-          <button class="btn primary block" type="submit">{lock}登录账号</button>
-          <p class="hint" style="margin-top:10px">演示账号：student / student123 · teacher / teacher123 · admin / admin123</p>
+          <button class="btn primary block" type="submit">{lock}@[strings/account_login]</button>
+          <p class="hint" style="margin-top:10px">@[strings/account_demo_accounts]</p>
         </form>
-        <div class="auth-divider">第一次使用？创建账号并绑定班级密钥</div>
+        <div class="auth-divider">@[strings/account_first_use]</div>
         <form class="login-form" method="post" action="/user/register">
           <div class="form-grid">
             <div class="field">
-              <label class="label" for="new-username">用户名</label>
+              <label class="label" for="new-username">@[strings/account_username]</label>
               <input class="input" id="new-username" name="username" type="text" autocomplete="username" required>
             </div>
             <div class="field">
-              <label class="label" for="new-password">密码</label>
+              <label class="label" for="new-password">@[strings/account_password]</label>
               <input class="input" id="new-password" name="password" type="password" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="field">
-              <label class="label" for="new-password2">确认密码</label>
+              <label class="label" for="new-password2">@[strings/account_confirm_password]</label>
               <input class="input" id="new-password2" name="password2" type="password" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="field">
-              <label class="label" for="claim-key">班级密钥</label>
-              <input class="input mono" id="claim-key" name="key" type="text" value="{prefill_key}" placeholder="可选，稍后也可在账号内添加">
+              <label class="label" for="claim-key">@[strings/login_key_label]</label>
+              <input class="input mono" id="claim-key" name="key" type="text" value="{prefill_key}" placeholder="@[strings/account_key_optional]">
             </div>
           </div>
-          <button class="btn outline block" type="submit" style="margin-top:16px">{key}创建账号并绑定</button>
-          <p class="hint" style="margin-top:10px">密钥可以之后在账号中心添加。每个密钥只对应一个班级。</p>
+          <button class="btn outline block" type="submit" style="margin-top:16px">{key}@[strings/account_create_bind]</button>
+          <p class="hint" style="margin-top:10px">@[strings/account_key_note]</p>
         </form>
       </div>
     </div>
@@ -2243,8 +2301,8 @@ pub fn user_guest(
         key = icon("key"),
         prefill_key = esc(prefill_key)
     );
-    let mut out = document_head("账号中心", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
+    let mut out = document_head("@[strings/role_account]", "system", true);
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
     out
 }
 
@@ -2261,9 +2319,9 @@ pub fn user_account(
             .iter()
             .map(|v| {
                 let label = match *v {
-                    "light" => "浅色",
-                    "dark" => "深色",
-                    _ => "跟随系统",
+                    "light" => "@[strings/account_theme_light]",
+                    "dark" => "@[strings/account_theme_dark]",
+                    _ => "@[strings/account_theme_system]",
                 };
                 format!(
                     r#"<option value="{v}"{sel}>{label}</option>"#,
@@ -2279,9 +2337,9 @@ pub fn user_account(
             .iter()
             .map(|v| {
                 let label = if *v == "mob" {
-                    "手机版"
+                    "@[strings/common_mobile]"
                 } else {
-                    "电脑版"
+                    "@[strings/common_desktop]"
                 };
                 format!(
                     r#"<option value="{v}"{sel}>{label}</option>"#,
@@ -2302,7 +2360,7 @@ pub fn user_account(
 
     let auths_html = if auths.is_empty() {
         format!(
-            r#"<div class="empty" style="padding:34px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">还没有绑定班级身份</div><div class="empty-desc">使用管理员发放的班级密钥，在下方添加你的第一个身份。</div></div>"#,
+            r#"<div class="empty" style="padding:34px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/account_no_auths_title]</div><div class="empty-desc">@[strings/account_no_auths_desc]</div></div>"#,
             icon = icon("key")
         )
     } else {
@@ -2346,15 +2404,15 @@ pub fn user_account(
     </div>
   </div>
   <div class="key-actions">
-    <button class="btn ghost sm" type="button" data-rename="{full}" data-name="{auth_name}" title="为此身份改名" aria-label="为此身份改名">{pencil}改名</button>
-    <button class="btn ghost sm" type="button" data-reveal>显示</button>
-    <button class="btn ghost sm" type="button" data-copy="{full}" title="复制密钥">{copy}</button>
+    <button class="btn ghost sm" type="button" data-rename="{full}" data-name="{auth_name}" title="@[strings/account_rename_identity]" aria-label="@[strings/account_rename_identity]">{pencil}@[strings/common_rename]</button>
+    <button class="btn ghost sm" type="button" data-reveal>@[strings/common_show]</button>
+    <button class="btn ghost sm" type="button" data-copy="{full}" title="@[strings/account_copy_key]">{copy}</button>
     <form class="enter-form" method="post" action="/user/enter">
       <input type="hidden" name="auth_id" value="{id}">
-      <button class="btn outline sm" type="submit">{arrow}进入</button>
+      <button class="btn outline sm" type="submit">{arrow}@[strings/common_enter]</button>
     </form>
-    <form method="post" action="/user/auth/{id}/delete" data-confirm="确定删除「{class_name}」的{role_label}身份吗？删除后该密钥将立即失效。" data-confirm-text="删除密钥">
-      <button class="btn danger sm" type="submit" title="删除该身份" aria-label="删除该身份">{trash}</button>
+    <form method="post" action="/user/auth/{id}/delete" data-confirm="{delete_confirm}" data-confirm-text="@[strings/account_delete_confirm_label]">
+      <button class="btn danger sm" type="submit" title="@[strings/account_delete_identity]" aria-label="@[strings/account_delete_identity]">{trash}</button>
     </form>
   </div>
 </div>"#,
@@ -2363,7 +2421,7 @@ pub fn user_account(
                     class_name = esc(&a.class_name),
                     role_badge = role_badge_text(&a.role),
                     current = if current {
-                        r#"<span class="current-tag">当前身份</span>"#
+                        r#"<span class="current-tag">@[strings/common_current_identity]</span>"#
                     } else {
                         ""
                     },
@@ -2376,7 +2434,11 @@ pub fn user_account(
                     id = esc(&a.id),
                     arrow = icon("arrow-right"),
                     trash = icon("trash"),
-                    role_label = esc(role_label(&a.role))
+                    delete_confirm = esc(&crate::strings::f2(
+                        "account_delete_confirm",
+                        &a.class_name,
+                        role_label(&a.role),
+                    ))
                 )
             })
             .collect();
@@ -2399,9 +2461,9 @@ pub fn user_account(
             .collect();
         format!(
             r#"<div class="field">
-  <label class="label" for="member-admin">管理员身份</label>
+  <label class="label" for="member-admin">@[strings/account_stats_admin]</label>
   <select class="select" id="member-admin">{opts}</select>
-  <span class="hint">生成密钥时会使用该身份所在班级。</span>
+  <span class="hint">@[strings/account_member_hint]</span>
 </div>"#,
             opts = opts
         )
@@ -2409,7 +2471,7 @@ pub fn user_account(
 
     let admin_area = if admin_auths.is_empty() {
         format!(
-            r#"<div class="account-note">{} 你目前不是任何班级的管理员，因此不能创建班级或生成成员密钥。请先在某个班级获得管理员密钥。</div>"#,
+            r#"<div class="account-note">{} @[strings/account_not_admin_note]</div>"#,
             icon("shield")
         )
     } else {
@@ -2428,40 +2490,40 @@ pub fn user_account(
   <form class="stack" method="post" action="/user/class">
     <div class="form-grid">
       <div class="field">
-        <label class="label" for="class-name">班级名称</label>
-        <input class="input" id="class-name" name="name" type="text" maxlength="40" required placeholder="例如：高一（4）班">
+        <label class="label" for="class-name">@[strings/account_class_name]</label>
+        <input class="input" id="class-name" name="name" type="text" maxlength="40" required placeholder="@[strings/account_class_name_placeholder]">
       </div>
       <div class="field">
-        <label class="label" for="class-auth">以哪个管理员身份创建</label>
+        <label class="label" for="class-auth">@[strings/account_class_create_as]</label>
         <select class="select" id="class-auth" name="admin_auth_id">{class_opts}</select>
       </div>
       <div class="field full">
-        <label class="label" for="class-desc">班级简介</label>
-        <textarea class="textarea" id="class-desc" name="desc" maxlength="500" placeholder="一句话介绍这个班级"></textarea>
+        <label class="label" for="class-desc">@[strings/account_class_desc]</label>
+        <textarea class="textarea" id="class-desc" name="desc" maxlength="500" placeholder="@[strings/account_class_desc_placeholder]"></textarea>
       </div>
     </div>
-    <div><button class="btn primary" type="submit">{plus}创建班级并成为管理员</button></div>
+    <div><button class="btn primary" type="submit">{plus}@[strings/account_class_create]</button></div>
   </form>
   <div class="divider"></div>
   <form class="stack" id="member-form">
     <div class="form-grid">
       {admin_select}
       <div class="field">
-        <label class="label" for="member-kind">成员类型</label>
+        <label class="label" for="member-kind">@[strings/account_member_role]</label>
         <select class="select" id="member-kind">
-          <option value="Student">学生</option>
-          <option value="Teacher">老师</option>
-          <option value="Admin">管理员</option>
+          <option value="Student">@[strings/role_student]</option>
+          <option value="Teacher">@[strings/role_teacher]</option>
+          <option value="Admin">@[strings/role_admin]</option>
         </select>
       </div>
       <div class="field">
-        <label class="label" for="member-quantity">生成数量</label>
+        <label class="label" for="member-quantity">@[strings/account_member_quantity]</label>
         <input class="input" id="member-quantity" type="number" min="1" max="100" value="1">
       </div>
     </div>
-    <div><button class="btn outline" type="submit">{key}生成成员密钥</button></div>
+    <div><button class="btn outline" type="submit">{key}@[strings/account_member_generate]</button></div>
     <div class="member-result" id="member-result" hidden></div>
-    <p class="hint">生成后密钥仅展示一次，请复制后交给对应成员。成员可在账号中心绑定该密钥。</p>
+    <p class="hint">@[strings/account_member_note]</p>
   </form>
 </div>"#,
             admin_select = admin_select,
@@ -2480,81 +2542,81 @@ pub fn user_account(
     <p class="username">@{username}</p>
   </div>
   <div class="account-stats">
-    <div class="account-stat"><strong>{n_auths}</strong><span>已绑定身份</span></div>
-    <div class="account-stat"><strong>{n_classes}</strong><span>所在班级</span></div>
-    <div class="account-stat"><strong>{n_admin}</strong><span>管理员身份</span></div>
+    <div class="account-stat"><strong>{n_auths}</strong><span>@[strings/account_stats_auths]</span></div>
+    <div class="account-stat"><strong>{n_classes}</strong><span>@[strings/account_stats_classes]</span></div>
+    <div class="account-stat"><strong>{n_admin}</strong><span>@[strings/account_stats_admin]</span></div>
   </div>
 </section>
 <div class="account-grid">
   <section class="panel">
-    <div class="panel-head"><h3 class="panel-title">{settings}偏好设置</h3></div>
+    <div class="panel-head"><h3 class="panel-title">{settings}@[strings/login_feature_prefs]</h3></div>
     <div class="panel-body">
       <form class="stack" method="post" action="/user/prefs" id="prefs-form">
         <div class="field">
-          <label class="label" for="display-name">显示名称</label>
+          <label class="label" for="display-name">@[strings/account_display_name]</label>
           <input class="input" id="display-name" name="display_name" type="text" maxlength="40" value="{display}">
         </div>
         <div class="form-grid">
           <div class="field">
-            <label class="label" for="pref-theme">主题</label>
+            <label class="label" for="pref-theme">@[strings/account_theme]</label>
             <select class="select" id="pref-theme" name="theme">{theme_sel}</select>
           </div>
           <div class="field">
-            <label class="label" for="pref-mode">默认视图</label>
+            <label class="label" for="pref-mode">@[strings/account_default_view]</label>
             <select class="select" id="pref-mode" name="mode">{mode_sel}</select>
           </div>
         </div>
-        <div><button class="btn primary" type="submit">保存偏好</button></div>
+        <div><button class="btn primary" type="submit">@[strings/account_save_prefs]</button></div>
       </form>
     </div>
   </section>
   <section class="panel">
-    <div class="panel-head"><h3 class="panel-title">{lock}登录与安全</h3></div>
+    <div class="panel-head"><h3 class="panel-title">{lock}@[strings/account_security]</h3></div>
     <div class="panel-body">
       <form class="stack" method="post" action="/user/password">
         <div class="field">
-          <label class="label" for="old-pw">当前密码</label>
+          <label class="label" for="old-pw">@[strings/account_current_password]</label>
           <input class="input" id="old-pw" name="old" type="password" autocomplete="current-password" required>
         </div>
         <div class="form-grid">
           <div class="field">
-            <label class="label" for="new-pw">新密码</label>
+            <label class="label" for="new-pw">@[strings/account_new_password]</label>
             <input class="input" id="new-pw" name="new" type="password" minlength="6" autocomplete="new-password" required>
           </div>
           <div class="field">
-            <label class="label" for="new-pw2">确认新密码</label>
+            <label class="label" for="new-pw2">@[strings/account_confirm_new_password]</label>
             <input class="input" id="new-pw2" name="new2" type="password" minlength="6" autocomplete="new-password" required>
           </div>
         </div>
-        <div><button class="btn primary" type="submit">修改密码</button></div>
+        <div><button class="btn primary" type="submit">@[strings/account_change_password]</button></div>
       </form>
       <div class="divider"></div>
       <form method="post" action="/user/logout">
-        <button class="btn danger block" type="submit">{logout}退出账号中心</button>
+        <button class="btn danger block" type="submit">{logout}@[strings/account_logout]</button>
       </form>
     </div>
   </section>
   <section class="panel account-section">
     <div class="panel-head">
-      <h3 class="panel-title">{key}我的班级身份<span class="count">{n_auths}</span></h3>
-      <span class="hint">密钥只对你可见</span>
+      <h3 class="panel-title">{key}@[strings/account_my_auths]<span class="count">{n_auths}</span></h3>
+      <span class="hint">@[strings/common_key_only_visible]</span>
     </div>
     <div class="panel-body">
       {auths}
       <div class="divider"></div>
       <form class="row" method="post" action="/user/claim" style="align-items:flex-end">
         <div class="field grow">
-          <label class="label" for="claim-key2">添加已有密钥</label>
-          <input class="input mono" id="claim-key2" name="key" type="text" placeholder="输入管理员发放的班级密钥" required>
+          <label class="label" for="claim-key2">@[strings/account_add_auth]</label>
+          <input class="input mono" id="claim-key2" name="key" type="text" placeholder="@[strings/account_add_auth_placeholder]" required>
         </div>
-        <button class="btn outline" type="submit">{plus}绑定到账号</button>
+        <button class="btn outline" type="submit">{plus}@[strings/account_bind]</button>
       </form>
     </div>
   </section>
   <section class="panel account-section">
     <div class="panel-head">
-      <h3 class="panel-title">{shield}班级管理<span class="count">管理员</span></h3>
-      <span class="hint">创建班级 / 生成成员密钥</span>
+      <h3 class="panel-title">{shield}@[strings/account_admin_area]<span class="count">@[strings/role_admin]</span></h3>
+      <span class="hint">@[strings/account_admin_hint]</span>
     </div>
     <div class="panel-body">{admin_area}</div>
   </section>
@@ -2582,9 +2644,9 @@ pub fn not_found(ctx: Option<&LayoutCtx>, msg: &str) -> axum::response::Response
     let body = format!(
         r#"<div class="empty" style="margin-top:6vh;padding:60px 22px">
   <span class="empty-icon">{icon}</span>
-  <div class="empty-title">页面或内容不存在</div>
+  <div class="empty-title">@[strings/error_not_found_title]</div>
   <div class="empty-desc">{msg}</div>
-  <a class="btn primary" href="/home">返回首页</a>
+  <a class="btn primary" href="/home">@[strings/common_back_home]</a>
 </div>"#,
         icon = icon("alert"),
         msg = esc(msg)
@@ -2592,9 +2654,13 @@ pub fn not_found(ctx: Option<&LayoutCtx>, msg: &str) -> axum::response::Response
     match ctx {
         Some(ctx) => (
             axum::http::StatusCode::NOT_FOUND,
-            axum::response::Html(layout(ctx, &body)),
+            axum::response::Html(crate::strings::apply(&layout(ctx, &body))),
         )
             .into_response(),
-        None => crate::tools::plain_error(axum::http::StatusCode::NOT_FOUND, "页面不存在", msg),
+        None => crate::tools::plain_error(
+            axum::http::StatusCode::NOT_FOUND,
+            "@[strings/error_page_not_found]",
+            msg,
+        ),
     }
 }

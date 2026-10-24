@@ -204,10 +204,10 @@ pub fn create_class(
     };
     let name_chars = class_name.chars().count();
     if name_chars > 40 {
-        return Err("班级名称过长（最多 40 字）".to_string());
+        return Err("class name is too long (max 40 characters)".to_string());
     }
     if desc.chars().count() > 500 {
-        return Err("班级简介过长（最多 500 字）".to_string());
+        return Err("class description is too long (max 500 characters)".to_string());
     }
 
     let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
@@ -292,13 +292,13 @@ pub fn create_members(
     quantity: i64,
 ) -> Result<Vec<CreatedMember>, String> {
     if class_id != admin.class_id {
-        return Err("只能在当前管理员所属班级内新增成员".to_string());
+        return Err("members can only be added to the class of the current admin auth".to_string());
     }
     if !(1..=100).contains(&quantity) {
-        return Err("quantity 必须在 1–100 之间".to_string());
+        return Err("quantity must be between 1 and 100".to_string());
     }
     let role = normalize_role(kind)
-        .ok_or_else(|| "type 必须是 Student / Teacher / Admin 之一".to_string())?;
+        .ok_or_else(|| "type must be one of Student / Teacher / Admin".to_string())?;
     let code = class_code(db, class_id);
     let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
     let max_short: i64 = tx

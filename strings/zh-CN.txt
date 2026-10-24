@@ -1,0 +1,427 @@
+# 智慧校园 · 简体中文 UI strings（v0.1.2）
+# 格式：name=<key> lines=0 content=<单行内容>
+#       lines>0 时 content= 后可为空，随后 N 行是内容；可用于多行文案。
+# 运行时自动同步到 strings.db，并在 HTML 中替换 @[strings/key] 标签。
+
+name=title lines=0 content=智慧校园
+name=brand_tagline lines=0 content=Campus OS
+name=brand_tagline_upper lines=0 content=CAMPUS OS
+name=brand_footer lines=0 content=智慧校园 · Campus OS
+name=role_parent lines=0 content=家长
+name=role_teacher lines=0 content=老师
+name=role_admin lines=0 content=管理员
+name=role_student lines=0 content=学生
+name=role_account lines=0 content=账号中心
+name=common_close lines=0 content=关闭
+name=common_cancel lines=0 content=取消
+name=common_confirm lines=0 content=确定
+name=common_save lines=0 content=保存
+name=common_delete lines=0 content=删除
+name=common_show lines=0 content=显示
+name=common_hide lines=0 content=隐藏
+name=common_enter lines=0 content=进入
+name=common_rename lines=0 content=改名
+name=common_view_all lines=0 content=查看全部
+name=common_open lines=0 content=打开
+name=common_go_submit lines=0 content=去提交
+name=common_view lines=0 content=查看
+name=common_confirm_title lines=0 content=确认操作
+name=common_attachment_preview lines=0 content=附件预览
+name=common_current_identity lines=0 content=当前身份
+name=common_logout lines=0 content=退出登录
+name=common_theme_light lines=0 content=切换到浅色模式
+name=common_theme_dark lines=0 content=切换到深色模式
+name=common_theme_toggle lines=0 content=切换主题
+name=common_switch_identity lines=0 content=切换身份
+name=common_identity_login lines=0 content=身份登录
+name=common_back_home lines=0 content=返回首页
+name=common_personal_account lines=0 content=个人账号
+name=common_account_desc lines=0 content=管理身份、密钥与偏好设置
+name=common_not_found lines=0 content=未找到
+name=common_object lines=0 content=该对象
+name=common_attachment lines=0 content=附件
+name=common_student_no_suffix lines=0 content= · {} 号
+name=common_mobile lines=0 content=手机版
+name=common_desktop lines=0 content=电脑版
+name=common_view_mode lines=0 content=视图模式
+name=common_or lines=0 content=或
+name=common_click_fill lines=0 content=点击填入
+name=common_key_only_visible lines=0 content=密钥只对你可见
+name=type_homework lines=0 content=作业
+name=type_open_call lines=0 content=公开征集
+name=type_leave_request lines=0 content=请假申请
+name=type_notice lines=0 content=通知
+name=type_other lines=0 content=其他
+name=type_generic lines=0 content=征集
+name=deadline_none lines=0 content=无截止
+name=deadline_expired lines=0 content=已截止
+name=deadline_minutes lines=0 content=剩 {} 分钟
+name=deadline_hours lines=0 content=剩 {} 小时
+name=deadline_days lines=0 content=剩 {} 天
+name=time_just_now lines=0 content=刚刚
+name=time_minutes_ago lines=0 content={} 分钟前
+name=time_hours_ago lines=0 content={} 小时前
+name=time_days_ago lines=0 content={} 天前
+name=time_no_deadline lines=0 content=不设截止时间
+name=layout_current_class lines=0 content=CURRENT CLASS
+name=layout_account lines=0 content=ACCOUNT
+name=layout_class_space lines=0 content=班级空间
+name=layout_student_identity lines=0 content=学生身份
+name=layout_space_nav lines=0 content=空间导航
+name=layout_main_nav lines=0 content=主导航
+name=layout_bottom_nav lines=0 content=底部导航
+name=layout_brand_home lines=0 content=智慧校园首页
+name=nav_home lines=0 content=首页
+name=nav_uploads_parent lines=0 content=孩子提交
+name=nav_uploads_self lines=0 content=我的上传
+name=nav_uploads_staff lines=0 content=提交管理
+name=nav_account lines=0 content=账号
+name=nav_publish lines=0 content=发布征集
+name=page_home lines=0 content=首页
+name=page_submissions lines=0 content=征集
+name=page_publish lines=0 content=发布
+name=page_uploads lines=0 content=提交
+name=page_upload lines=0 content=上传作品
+name=page_submission_detail lines=0 content=征集详情
+name=page_upload_detail lines=0 content=提交详情
+name=login_hero_eyebrow lines=0 content=SMART CAMPUS
+name=login_hero_login_title lines=0 content=让每一次提交，<br>都被<em>认真看见</em>
+name=login_hero_login_desc lines=0 content=面向班级的征集、提交与回复工作台。家长、老师和管理员共享同一套清晰的数据，却拥有各自恰到好处的视角。
+name=login_hero_account_title lines=0 content=一个账号，连接<br><em>每一个班级身份</em>
+name=login_hero_account_desc lines=0 content=绑定多个班级密钥，随时切换家长、老师或管理员视角。管理偏好设置，查看自己拥有的全部身份。
+name=login_feature_class lines=0 content=班级征集
+name=login_feature_files lines=0 content=附件归档
+name=login_feature_reply lines=0 content=及时回复
+name=login_feature_session lines=0 content=HttpOnly 会话
+name=login_feature_keys lines=0 content=多班级密钥
+name=login_feature_prefs lines=0 content=偏好设置
+name=login_hero_year lines=0 content=2026
+name=login_choose_identity lines=0 content=选择你的身份
+name=login_welcome lines=0 content=欢迎回到智慧校园
+name=login_welcome_desc lines=0 content=请选择进入班级空间的身份，每种身份使用对应的班级密钥登录。
+name=login_parent_desc lines=0 content=查看孩子的提交、回复与班级征集
+name=login_teacher_desc lines=0 content=发布征集、批阅提交、写回复
+name=login_admin_desc lines=0 content=管理班级、成员与全部内容
+name=login_account_center lines=0 content=进入账号中心（用户名 / 密码登录）
+name=login_demo_summary lines=0 content=演示环境 · 一键复制密钥
+name=login_demo_parent_student lines=0 content=家长 / 学生
+name=login_footer_note lines=0 content=家长与学生共用孩子的学生密钥 · 密钥即身份，请勿转发
+name=login_back_identity lines=0 content=返回身份选择
+name=login_parent_page_title lines=0 content=家长登录
+name=login_parent_page_desc lines=0 content=使用孩子的学生密钥进入班级，查看征集、提交与老师回复。
+name=login_teacher_page_title lines=0 content=老师登录
+name=login_teacher_page_desc lines=0 content=使用教师密钥登录，发布征集、查看全班提交并写回复。
+name=login_admin_page_title lines=0 content=管理员登录
+name=login_admin_page_desc lines=0 content=使用管理员密钥登录，管理班级、成员、征集与全部内容。
+name=login_student_page_title lines=0 content=学生登录
+name=login_student_page_desc lines=0 content=使用学生密钥进入班级空间，上传作业与查看回复。
+name=login_placeholder lines=0 content=例如 SC-STU-XXXX-XXXX
+name=login_placeholder_teacher lines=0 content=例如 SC-TEA-XXXX-XXXX
+name=login_placeholder_admin lines=0 content=例如 SC-ADM-XXXX-XXXX
+name=login_demo_teacher lines=0 content=老师演示密钥
+name=login_demo_admin lines=0 content=管理员演示密钥
+name=login_demo_parent lines=0 content=学生 / 家长演示密钥
+name=login_key_label lines=0 content=班级密钥
+name=login_key_hint lines=0 content=每个密钥只对应一个班级。需要切换班级时，请切换到该班级的密钥。
+name=login_submit lines=0 content=登录
+name=login_other_identity lines=0 content=其他身份
+name=login_account_center_link lines=0 content=账号中心（用户名 / 密码登录）
+name=login_authorized_note lines=0 content=登入即表示你已获得该班级密钥的授权。
+name=login_error_wrong_address lines=0 content=登录地址不正确
+name=login_error_unknown_identity lines=0 content=未知的登录身份
+name=login_error_enter_key lines=0 content=请输入班级密钥
+name=login_error_invalid_key lines=0 content=密钥无效或已被删除，请检查后重试
+name=home_eyebrow_student lines=0 content=STUDENT SPACE
+name=home_eyebrow_parent lines=0 content=PARENT SPACE
+name=home_eyebrow_teacher lines=0 content=TEACHER DESK
+name=home_eyebrow_admin lines=0 content=ADMIN CONSOLE
+name=home_title_parent lines=0 content=您好，<em>{}</em>的家长
+name=home_desc_parent lines=0 content=孩子的每一次提交与老师的每一条回复，都在这里清晰呈现。
+name=home_title_teacher lines=0 content=把每一个反馈，<br>送到学生手里。
+name=home_desc_teacher lines=0 content=发布班级征集、批阅学生提交、写下一条有温度的回复。
+name=home_title_admin lines=0 content=让班级的每件事，<br>都有迹可循。
+name=home_desc_admin lines=0 content=管理征集与提交，处理成员与班级，掌握班级空间的实时动态。
+name=home_title_student lines=0 content=把每一次提交，<br>变成成长的刻度。
+name=home_desc_student lines=0 content=查看班级征集、上传你的作品，并收下老师的每一条回复。
+name=home_action_browse lines=0 content=浏览征集
+name=home_float_pending lines=0 content=待回复提交
+name=home_float_admin lines=0 content=班级动态
+name=home_float_parent lines=0 content=孩子的最近提交
+name=home_float_self lines=0 content=我的最近提交
+name=home_float_pending_sub lines=0 content=优先处理未回复的提交
+name=home_float_admin_sub lines=0 content=全部内容尽在掌握
+name=home_float_default_sub lines=0 content=点击即可查看回复
+name=home_recent_submissions lines=0 content=最近的征集
+name=home_empty_submissions_title lines=0 content=还没有征集
+name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧。
+name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
+name=stat_members lines=0 content=班级成员
+name=stat_active_submissions lines=0 content=进行中征集
+name=stat_pending lines=0 content=待回复提交
+name=stat_replied lines=0 content=已回复提交
+name=stat_class_submissions lines=0 content=班级征集
+name=stat_my_uploads lines=0 content=我的提交
+name=stat_child_uploads lines=0 content=孩子提交
+name=stat_replies_received lines=0 content=收到回复
+name=submissions_page_title lines=0 content=班级征集
+name=submissions_page_sub lines=0 content={} 个征集 · 单位：{}
+name=submissions_unit_class lines=0 content=班级
+name=submissions_unit_person lines=0 content=本人
+name=submissions_unit_child lines=0 content=孩子
+name=submissions_empty_desc lines=0 content=老师发布征集后，会在这里展示。你提交过的内容也会自动关联到对应征集。
+name=submissions_publish_first lines=0 content=发布第一个征集
+name=submissions_count_staff lines=0 content={} 份提交
+name=submissions_count_own lines=0 content=已提交 {} 次
+name=submissions_count_child lines=0 content=孩子已提交 {} 次
+name=submissions_not_submitted lines=0 content=尚未提交
+name=submissions_child_not_submitted lines=0 content=孩子尚未提交
+name=new_page_title lines=0 content=发布新征集
+name=new_back lines=0 content=返回征集列表
+name=new_subtitle lines=0 content=征集会立即出现在班级空间，学生与家长可以查看并提交。
+name=new_name_label lines=0 content=征集名称
+name=new_name_placeholder lines=0 content=例如：函数与导数 · 周末练习
+name=new_type_label lines=0 content=类型
+name=new_deadline_label lines=0 content=截止时间
+name=new_no_deadline lines=0 content=不设置截止时间
+name=new_desc_label lines=0 content=说明
+name=new_desc_placeholder lines=0 content=写清楚提交要求、格式与注意事项，学生会在详情页看到这段说明。
+name=new_tips_title lines=0 content=发布小贴士
+name=new_tip1 lines=0 content=1. 名称尽量具体，包含学科、主题或活动名称。
+name=new_tip2 lines=0 content=2. 截止时间按北京时间显示，学生端会实时提示剩余时间。
+name=new_tip3 lines=0 content=3. 学生可多次上传；老师可以在提交详情中逐条回复。
+name=new_tip4 lines=0 content=4. 发布后管理员可以删除该征集，请确认内容无误。
+name=new_current_class lines=0 content=当前班级
+name=new_publish_identity lines=0 content=发布身份
+name=new_data_scope lines=0 content=数据范围
+name=new_data_scope_value lines=0 content=管理员 / 老师 · 全班
+name=uploads_title_staff lines=0 content=班级提交
+name=uploads_title_parent lines=0 content=孩子的提交
+name=uploads_sub_staff lines=0 content=查看全班提交，及时给每一份作品写下回复。
+name=uploads_sub_parent lines=0 content=孩子上传过的全部内容都在这里，可按征集回溯。
+name=uploads_sub_self lines=0 content=你上传过的所有内容都在这里，可按征集回溯。
+name=uploads_tab_all lines=0 content=全部 {}
+name=uploads_tab_pending lines=0 content=待回复 {}
+name=uploads_tab_replied lines=0 content=已回复 {}
+name=uploads_count_own lines=0 content={} 次提交
+name=uploads_empty_pending lines=0 content=没有待回复的提交
+name=uploads_empty_replied lines=0 content=还没有已回复的提交
+name=uploads_empty_all lines=0 content=还没有提交
+name=uploads_empty_desc_staff lines=0 content=学生上传后，这里会实时出现新的提交。
+name=uploads_empty_desc_parent lines=0 content=孩子尚未提交过内容，可以从征集列表开始。
+name=uploads_empty_desc_self lines=0 content=选择一个征集，上传你的作业或作品吧。
+name=uploads_go lines=0 content=去征集列表看看
+name=uploads_status_pending lines=0 content=待回复
+name=uploads_status_replies lines=0 content={} 条回复
+name=submission_all_export lines=0 content=导出 JSON
+name=submission_all_delete lines=0 content=删除征集
+name=submission_all_published lines=0 content=发布于 {}
+name=submission_all_empty_staff lines=0 content=学生提交后会显示在这里。
+name=submission_all_empty_parent lines=0 content=孩子还没有为这个征集上传内容。
+name=submission_all_empty_self lines=0 content=你还没有为这个征集上传内容。
+name=submission_all_upload_first lines=0 content=上传第一份作品
+name=submission_all_list_staff lines=0 content=全部提交
+name=submission_all_list_parent lines=0 content=孩子的提交
+name=submission_all_list_self lines=0 content=我的提交
+name=submission_all_hint_staff lines=0 content=点击任意提交查看附件并回复
+name=submission_all_hint_parent lines=0 content=仅显示孩子自己的提交
+name=submission_all_hint_self lines=0 content=仅显示你自己的提交
+name=submission_all_no_desc lines=0 content=暂无说明
+name=upload_back_list lines=0 content=返回提交列表
+name=upload_back_submission lines=0 content=返回征集详情
+name=upload_back_all lines=0 content=返回「{}」全部提交
+name=upload_view_submission lines=0 content=查看征集
+name=upload_reupload lines=0 content=重新上传
+name=upload_delete lines=0 content=删除本次提交
+name=upload_no_desc lines=0 content=提交人没有填写说明。
+name=upload_no_attachments lines=0 content=该上传没有附件。
+name=upload_attachments_title lines=0 content=附件与内容
+name=upload_preview_aria lines=0 content=预览附件 {}
+name=upload_replies lines=0 content=回复
+name=upload_reply_role_hint lines=0 content=老师 / 管理员
+name=upload_reply_placeholder lines=0 content=写下对这份提交的回复……
+name=upload_reply_publish lines=0 content=发布回复
+name=upload_reply_note lines=0 content=回复会立即展示给提交人和家长
+name=upload_reply_only_staff lines=0 content=只有老师和管理员可以回复这份提交。
+name=upload_reply_empty_title lines=0 content=还没有回复
+name=upload_reply_empty_staff lines=0 content=写下第一条回复，让学生收到反馈。
+name=upload_reply_empty_student lines=0 content=老师回复后会显示在这里。
+name=upload_quick_done lines=0 content=已完成
+name=upload_quick_done_text lines=0 content=已完成，步骤清晰，继续保持！
+name=upload_quick_supplement lines=0 content=请补充过程
+name=upload_quick_supplement_text lines=0 content=请补充解题过程，并标注关键步骤。
+name=upload_quick_received lines=0 content=已收到
+name=upload_quick_received_text lines=0 content=已收到，稍后为你详细批注。
+name=upload_tip_staff lines=0 content=提示：回复发出后不可编辑，请确认内容后提交。
+name=upload_tip_student lines=0 content=提示：你可以在截止后补交，老师会看到每次提交的时间。
+name=upload_info_uploader lines=0 content=提交人
+name=upload_info_role lines=0 content=身份
+name=upload_info_student_no lines=0 content=学号
+name=upload_info_submitted_at lines=0 content=提交时间
+name=upload_info_last_reply lines=0 content=最近回复
+name=upload_info_reply_count lines=0 content=回复数量
+name=upload_info_title lines=0 content=提交信息
+name=upload_form_page_title lines=0 content=上传到「{}」
+name=upload_form_subtitle lines=0 content=支持图片、PDF 与常见文档，单个上传最多 8 个附件、总计约 18MB。
+name=upload_form_title_label lines=0 content=标题
+name=upload_form_title_hint lines=0 content=给这份提交一个清晰的名字，方便老师批阅。
+name=upload_form_desc_placeholder lines=0 content=补充说明、解题思路、遇到的问题……
+name=upload_form_drop lines=0 content=拖拽文件到这里，或 <span>点击选择文件</span>
+name=upload_form_drop_hint lines=0 content=图片 / PDF / 文档 · 最多 8 个 · 总计 18MB
+name=upload_form_submission_info lines=0 content=征集信息
+name=upload_form_publisher lines=0 content=发布人
+name=upload_form_published_at lines=0 content=发布时间
+name=upload_form_existing lines=0 content=你已为这个征集提交过 {} 次，本次会作为新的上传保留。
+name=upload_form_existing_parent lines=0 content=孩子已为这个征集提交过 {} 次，本次会作为新的上传保留。
+name=upload_form_first lines=0 content=这是你在本征集的第一次提交。
+name=upload_form_first_parent lines=0 content=这是孩子在本次征集的第一次提交。
+name=upload_form_last_link lines=0 content=查看上一次提交
+name=upload_form_tip lines=0 content=提示：截止后仍可补交，老师会看到每次提交的时间。
+name=account_back_login lines=0 content=返回角色登录
+name=account_login_desc lines=0 content=使用用户名与密码登录，管理你绑定的班级身份与个人偏好。
+name=account_username lines=0 content=用户名
+name=account_password lines=0 content=密码
+name=account_login lines=0 content=登录账号
+name=account_demo_accounts lines=0 content=演示账号：student / student123 · teacher / teacher123 · admin / admin123
+name=account_first_use lines=0 content=第一次使用？创建账号并绑定班级密钥
+name=account_confirm_password lines=0 content=确认密码
+name=account_key_optional lines=0 content=可选，稍后也可在账号内添加
+name=account_create_bind lines=0 content=创建账号并绑定
+name=account_key_note lines=0 content=密钥可以之后在账号中心添加。每个密钥只对应一个班级。
+name=account_stats_auths lines=0 content=已绑定身份
+name=account_stats_classes lines=0 content=所在班级
+name=account_stats_admin lines=0 content=管理员身份
+name=account_display_name lines=0 content=显示名称
+name=account_theme lines=0 content=主题
+name=account_default_view lines=0 content=默认视图
+name=account_theme_system lines=0 content=跟随系统
+name=account_theme_light lines=0 content=浅色
+name=account_theme_dark lines=0 content=深色
+name=account_save_prefs lines=0 content=保存偏好
+name=account_security lines=0 content=登录与安全
+name=account_current_password lines=0 content=当前密码
+name=account_new_password lines=0 content=新密码
+name=account_confirm_new_password lines=0 content=确认新密码
+name=account_change_password lines=0 content=修改密码
+name=account_logout lines=0 content=退出账号中心
+name=account_my_auths lines=0 content=我的班级身份
+name=account_no_auths_title lines=0 content=还没有绑定班级身份
+name=account_no_auths_desc lines=0 content=使用管理员发放的班级密钥，在下方添加你的第一个身份。
+name=account_add_auth lines=0 content=添加已有密钥
+name=account_add_auth_placeholder lines=0 content=输入管理员发放的班级密钥
+name=account_bind lines=0 content=绑定到账号
+name=account_admin_area lines=0 content=班级管理
+name=account_admin_hint lines=0 content=创建班级 / 生成成员密钥
+name=account_not_admin_note lines=0 content=你目前不是任何班级的管理员，因此不能创建班级或生成成员密钥。请先在某个班级获得管理员密钥。
+name=account_class_name lines=0 content=班级名称
+name=account_class_name_placeholder lines=0 content=例如：高一（4）班
+name=account_class_create_as lines=0 content=以哪个管理员身份创建
+name=account_class_desc lines=0 content=班级简介
+name=account_class_desc_placeholder lines=0 content=一句话介绍这个班级
+name=account_class_create lines=0 content=创建班级并成为管理员
+name=account_member_role lines=0 content=成员类型
+name=account_member_quantity lines=0 content=生成数量
+name=account_member_generate lines=0 content=生成成员密钥
+name=account_member_note lines=0 content=生成后密钥仅展示一次，请复制后交给对应成员。成员可在账号中心绑定该密钥。
+name=account_member_hint lines=0 content=生成密钥时会使用该身份所在班级。
+name=account_copy_key lines=0 content=复制密钥
+name=account_rename_identity lines=0 content=为此身份改名
+name=account_delete_identity lines=0 content=删除该身份
+name=account_delete_confirm_label lines=0 content=删除密钥
+name=account_rename_title lines=0 content=为身份改名
+name=account_rename_desc lines=0 content=新名称会显示在该班级的提交、回复与页面身份信息中。
+name=account_rename_label lines=0 content=新名称
+name=account_rename_hint lines=0 content=1–40 个字符，改名会同步刷新该身份的历史显示名称。
+name=account_member_generated_title lines=0 content=本次生成 {} 个密钥（请妥善保存，仅显示一次）
+name=account_member_generated_toast lines=0 content=已生成 {} 个密钥
+name=flash_need_login lines=0 content=请先登录账号
+name=flash_enter_username_password lines=0 content=请输入用户名和密码
+name=flash_wrong_credentials lines=0 content=用户名或密码错误
+name=flash_username_invalid lines=0 content=用户名需为 2–32 位，只能包含中英文、数字、下划线或短横线
+name=flash_password_min lines=0 content=密码至少需要 6 位
+name=flash_password_mismatch lines=0 content=两次输入的密码不一致
+name=flash_password_too_long lines=0 content=密码过长
+name=flash_key_bound lines=0 content=该密钥已被其他账号绑定
+name=flash_key_invalid lines=0 content=密钥无效或已被删除
+name=flash_username_taken lines=0 content=用户名已被使用，请换一个
+name=flash_enter_key lines=0 content=请输入班级密钥
+name=flash_already_bound lines=0 content=该密钥已经绑定在你的账号上
+name=flash_bound lines=0 content=密钥已绑定到账号
+name=flash_bind_failed lines=0 content=绑定失败，请稍后重试
+name=flash_identity_missing lines=0 content=该身份不存在或已被删除
+name=flash_not_your_identity lines=0 content=该身份不属于当前账号
+name=flash_only_own_auth lines=0 content=只能删除自己账号下的身份
+name=flash_prefs_saved lines=0 content=偏好设置已保存
+name=flash_account_missing lines=0 content=账号不存在
+name=flash_current_password_wrong lines=0 content=当前密码不正确
+name=flash_password_changed lines=0 content=密码已修改
+name=flash_class_created lines=0 content=班级已创建，新的管理员密钥已加入你的身份列表
+name=flash_teacher_only_publish lines=0 content=仅老师或管理员可以发布征集
+name=flash_welcome lines=0 content=欢迎回来
+name=flash_logged_out lines=0 content=已退出登录
+name=flash_identity_deleted lines=0 content=身份已删除
+name=flash_save_failed lines=0 content=保存失败，请稍后重试
+name=flash_delete_failed lines=0 content=删除失败，请稍后重试
+name=flash_change_failed lines=0 content=修改失败，请稍后重试
+name=error_not_found_title lines=0 content=页面或内容不存在
+name=error_page_not_found lines=0 content=页面不存在
+name=error_not_found_desc lines=0 content=你访问的页面不存在或已被移动。
+name=error_submission_missing lines=0 content=该征集不存在，或不属于当前班级。
+name=error_upload_missing lines=0 content=该提交不存在，或你没有权限查看。
+name=error_submission_related_missing lines=0 content=关联的征集不存在。
+name=error_page_missing lines=0 content=页面不存在。
+name=error_back_home lines=0 content=返回首页
+name=toast_copy_ok lines=0 content=已复制
+name=toast_copy_failed lines=0 content=复制失败，请手动选择
+name=toast_confirm_default lines=0 content=确认操作？
+name=toast_upload_limit lines=0 content=最多上传 {} 个附件
+name=toast_upload_limit_reached lines=0 content=已达到附件数量上限（{} 个）
+name=toast_upload_too_large lines=0 content=附件总大小不能超过 18MB
+name=toast_upload_title_required lines=0 content=请填写上传标题
+name=toast_missing_submission lines=0 content=缺少征集信息
+name=toast_submitting lines=0 content=提交中…
+name=toast_uploaded lines=0 content=上传成功
+name=toast_submission_name_required lines=0 content=请填写征集名称
+name=toast_publishing lines=0 content=发布中…
+name=toast_submission_published lines=0 content=征集已发布
+name=toast_reply_empty lines=0 content=回复内容不能为空
+name=toast_sending lines=0 content=发送中…
+name=toast_reply_published lines=0 content=回复已发布
+name=toast_exporting lines=0 content=导出中…
+name=toast_exported lines=0 content=已导出 {} 条数据
+name=toast_select_admin lines=0 content=请选择管理员身份
+name=toast_quantity_range lines=0 content=数量需在 1–100 之间
+name=toast_generating lines=0 content=生成中…
+name=toast_enter_rename lines=0 content=请输入新名称
+name=toast_rename_missing lines=0 content=缺少身份信息，请刷新页面重试
+name=toast_saving lines=0 content=保存中…
+name=toast_renamed lines=0 content=身份名称已更新
+name=toast_demo_filled lines=0 content=已填入演示密钥，点击登录即可
+name=toast_delete_confirm_title lines=0 content=删除确认
+name=toast_delete_confirm_message lines=0 content=确定删除「{}」吗？此操作不可撤销。
+name=toast_deleted lines=0 content=已删除
+name=file_remove_aria lines=0 content=移除文件
+name=file_read_failed lines=0 content=读取文件失败：{}
+name=file_copy lines=0 content=复制
+name=file_copy_all lines=0 content=复制全部
+name=admin_slogan lines=2 content=
+让班级的每件事，
+都有迹可循
+name=flash_account_created lines=0 content=账号已创建
+name=flash_account_created_bound lines=0 content=账号已创建，密钥已绑定
+name=flash_admin_identity_missing lines=0 content=管理员身份不存在
+name=flash_not_your_admin_identity lines=0 content=该管理员身份不属于当前账号
+name=flash_admin_only_create_class lines=0 content=只有管理员身份可以创建班级
+name=flash_display_name_too_long lines=0 content=显示名称最多 40 个字
+name=flash_request_failed lines=0 content=请求失败，请稍后重试
+name=flash_login_expired lines=0 content=登录已失效，请重新登录
+name=flash_forbidden lines=0 content=没有权限执行该操作
+name=flash_server_error lines=0 content=服务器开小差了，请稍后重试
+name=avatar_fallback lines=0 content=校
+name=common_no_description lines=0 content=暂无描述
+name=common_attachment_n lines=0 content=附件 {}
+name=identity_admin lines=0 content=管理员
+name=identity_teacher lines=0 content=老师
+name=identity_student lines=0 content=学生
+name=identity_student_id lines=0 content=学生 {}
+name=student_no_full lines=0 content={} · {} 号
+name=student_no_short lines=0 content={} 号
