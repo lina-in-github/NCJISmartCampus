@@ -85,10 +85,10 @@ name=page_upload lines=0 content=上传作品
 name=page_submission_detail lines=0 content=征集详情
 name=page_upload_detail lines=0 content=提交详情
 name=login_hero_eyebrow lines=0 content=SMART CAMPUS
-name=login_hero_login_title lines=0 content=让每一次提交，<br>都被<em>认真看见</em>
-name=login_hero_login_desc lines=0 content=面向班级的征集、提交与回复工作台。家长、老师和管理员共享同一套清晰的数据，却拥有各自恰到好处的视角。
-name=login_hero_account_title lines=0 content=一个账号，连接<br><em>每一个班级身份</em>
-name=login_hero_account_desc lines=0 content=绑定多个班级密钥，随时切换家长、老师或管理员视角。管理偏好设置，查看自己拥有的全部身份。
+name=login_hero_login_title lines=0 content=面向班级的简单管理工具
+name=login_hero_login_desc lines=0 content=面向班级的简单管理工具
+name=login_hero_account_title lines=0 content=一个账号，可连接多个班级身份
+name=login_hero_account_desc lines=0 content=可绑定多个班级密钥，随时切换用户。在偏好设置中查看自己拥有的全部身份。
 name=login_feature_class lines=0 content=班级征集
 name=login_feature_files lines=0 content=附件归档
 name=login_feature_reply lines=0 content=及时回复
@@ -96,7 +96,7 @@ name=login_feature_session lines=0 content=HttpOnly 会话
 name=login_feature_keys lines=0 content=多班级密钥
 name=login_feature_prefs lines=0 content=偏好设置
 name=login_hero_year lines=0 content=2026
-name=login_choose_identity lines=0 content=选择你的身份
+name=login_choose_identity lines=0 content=选择你的登录身份
 name=login_welcome lines=0 content=欢迎回到智慧校园
 name=login_welcome_desc lines=0 content=请选择进入班级空间的身份，每种身份使用对应的班级密钥登录。
 name=login_parent_desc lines=0 content=查看孩子的提交、回复与班级征集
@@ -105,16 +105,16 @@ name=login_admin_desc lines=0 content=管理班级、成员与全部内容
 name=login_account_center lines=0 content=进入账号中心（用户名 / 密码登录）
 name=login_demo_summary lines=0 content=演示环境 · 一键复制密钥
 name=login_demo_parent_student lines=0 content=家长 / 学生
-name=login_footer_note lines=0 content=家长与学生共用孩子的学生密钥 · 密钥即身份，请勿转发
+name=login_footer_note lines=0 content=家长与学生共用孩子的学生密钥 · 请勿转发密钥
 name=login_back_identity lines=0 content=返回身份选择
 name=login_parent_page_title lines=0 content=家长登录
-name=login_parent_page_desc lines=0 content=使用孩子的学生密钥进入班级，查看征集、提交与老师回复。
+name=login_parent_page_desc lines=0 content=使用孩子的学生密钥进入班级
 name=login_teacher_page_title lines=0 content=老师登录
-name=login_teacher_page_desc lines=0 content=使用教师密钥登录，发布征集、查看全班提交并写回复。
+name=login_teacher_page_desc lines=0 content=使用教师密钥登录
 name=login_admin_page_title lines=0 content=管理员登录
-name=login_admin_page_desc lines=0 content=使用管理员密钥登录，管理班级、成员、征集与全部内容。
+name=login_admin_page_desc lines=0 content=使用管理员密钥登录
 name=login_student_page_title lines=0 content=学生登录
-name=login_student_page_desc lines=0 content=使用学生密钥进入班级空间，上传作业与查看回复。
+name=login_student_page_desc lines=0 content=使用学生密钥进入班级
 name=login_placeholder lines=0 content=例如 SC-STU-XXXX-XXXX
 name=login_placeholder_teacher lines=0 content=例如 SC-TEA-XXXX-XXXX
 name=login_placeholder_admin lines=0 content=例如 SC-ADM-XXXX-XXXX
@@ -136,13 +136,13 @@ name=home_eyebrow_parent lines=0 content=PARENT SPACE
 name=home_eyebrow_teacher lines=0 content=TEACHER DESK
 name=home_eyebrow_admin lines=0 content=ADMIN CONSOLE
 name=home_title_parent lines=0 content=您好，<em>{}</em>的家长
-name=home_desc_parent lines=0 content=孩子的每一次提交与老师的每一条回复，都在这里清晰呈现。
-name=home_title_teacher lines=0 content=把每一个反馈，<br>送到学生手里。
-name=home_desc_teacher lines=0 content=发布班级征集、批阅学生提交、写下一条有温度的回复。
-name=home_title_admin lines=0 content=让班级的每件事，<br>都有迹可循。
-name=home_desc_admin lines=0 content=管理征集与提交，处理成员与班级，掌握班级空间的实时动态。
-name=home_title_student lines=0 content=把每一次提交，<br>变成成长的刻度。
-name=home_desc_student lines=0 content=查看班级征集、上传你的作品，并收下老师的每一条回复。
+name=home_desc_parent lines=0 content=提交作业与查看老师的回复
+name=home_title_teacher lines=0 content=欢迎！
+name=home_desc_teacher lines=0 content=发布班级征集、批阅学生提交
+name=home_title_admin lines=0 content=欢迎！
+name=home_desc_admin lines=0 content=管理征集与提交，处理成员与班级
+name=home_title_student lines=0 content=欢迎！
+name=home_desc_student lines=0 content=查看班级征集、上传你的作品
 name=home_action_browse lines=0 content=浏览征集
 name=home_float_pending lines=0 content=待回复提交
 name=home_float_admin lines=0 content=班级动态
@@ -152,8 +152,11 @@ name=home_float_pending_sub lines=0 content=优先处理未回复的提交
 name=home_float_admin_sub lines=0 content=全部内容尽在掌握
 name=home_float_default_sub lines=0 content=点击即可查看回复
 name=home_recent_submissions lines=0 content=最近的征集
+name=home_recent_admin lines=0 content=最近的提交
+name=home_recent_teacher lines=0 content=最近的提交
+name=home_recent_student lines=0 content=最近的提交
 name=home_empty_submissions_title lines=0 content=还没有征集
-name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧。
+name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧！
 name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
 name=stat_members lines=0 content=班级成员
 name=stat_active_submissions lines=0 content=进行中征集
@@ -281,7 +284,7 @@ name=account_login_desc lines=0 content=使用用户名与密码登录，管理�
 name=account_username lines=0 content=用户名
 name=account_password lines=0 content=密码
 name=account_login lines=0 content=登录账号
-name=account_demo_accounts lines=0 content=演示账号：student / student123 · teacher / teacher123 · admin / admin123
+name=account_demo_accounts lines=0 content=输入你的用户名与密码
 name=account_first_use lines=0 content=第一次使用？创建账号并绑定班级密钥
 name=account_confirm_password lines=0 content=确认密码
 name=account_key_optional lines=0 content=可选，稍后也可在账号内添加
@@ -403,9 +406,6 @@ name=file_remove_aria lines=0 content=移除文件
 name=file_read_failed lines=0 content=读取文件失败：{}
 name=file_copy lines=0 content=复制
 name=file_copy_all lines=0 content=复制全部
-name=admin_slogan lines=2 content=
-让班级的每件事，
-都有迹可循
 name=flash_account_created lines=0 content=账号已创建
 name=flash_account_created_bound lines=0 content=账号已创建，密钥已绑定
 name=flash_admin_identity_missing lines=0 content=管理员身份不存在

@@ -1,0 +1,87 @@
+{flash}
+<section class="account-hero">
+  <span class="avatar lg">{initial}</span>
+  <div class="account-meta">
+    <h2>{display}</h2>
+    <p class="username">@{username}</p>
+  </div>
+  <div class="account-stats">
+    <div class="account-stat"><strong>{n_auths}</strong><span>@[strings/account_stats_auths]</span></div>
+    <div class="account-stat"><strong>{n_classes}</strong><span>@[strings/account_stats_classes]</span></div>
+    <div class="account-stat"><strong>{n_admin}</strong><span>@[strings/account_stats_admin]</span></div>
+  </div>
+</section>
+<div class="account-grid">
+  <section class="panel">
+    <div class="panel-head"><h3 class="panel-title">{settings}@[strings/login_feature_prefs]</h3></div>
+    <div class="panel-body">
+      <form class="stack" method="post" action="/user/prefs" id="prefs-form">
+        <div class="field">
+          <label class="label" for="display-name">@[strings/account_display_name]</label>
+          <input class="input" id="display-name" name="display_name" type="text" maxlength="40" value="{display}">
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="label" for="pref-theme">@[strings/account_theme]</label>
+            <select class="select" id="pref-theme" name="theme">{theme_sel}</select>
+          </div>
+          <div class="field">
+            <label class="label" for="pref-mode">@[strings/account_default_view]</label>
+            <select class="select" id="pref-mode" name="mode">{mode_sel}</select>
+          </div>
+        </div>
+        <div><button class="btn primary" type="submit">@[strings/account_save_prefs]</button></div>
+      </form>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h3 class="panel-title">{lock}@[strings/account_security]</h3></div>
+    <div class="panel-body">
+      <form class="stack" method="post" action="/user/password">
+        <div class="field">
+          <label class="label" for="old-pw">@[strings/account_current_password]</label>
+          <input class="input" id="old-pw" name="old" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="label" for="new-pw">@[strings/account_new_password]</label>
+            <input class="input" id="new-pw" name="new" type="password" minlength="6" autocomplete="new-password" required>
+          </div>
+          <div class="field">
+            <label class="label" for="new-pw2">@[strings/account_confirm_new_password]</label>
+            <input class="input" id="new-pw2" name="new2" type="password" minlength="6" autocomplete="new-password" required>
+          </div>
+        </div>
+        <div><button class="btn primary" type="submit">@[strings/account_change_password]</button></div>
+      </form>
+      <div class="divider"></div>
+      <form method="post" action="/user/logout">
+        <button class="btn danger block" type="submit">{logout}@[strings/account_logout]</button>
+      </form>
+    </div>
+  </section>
+  <section class="panel account-section">
+    <div class="panel-head">
+      <h3 class="panel-title">{key}@[strings/account_my_auths]<span class="count">{n_auths}</span></h3>
+      <span class="hint">@[strings/common_key_only_visible]</span>
+    </div>
+    <div class="panel-body">
+      {auths}
+      <div class="divider"></div>
+      <form class="row align-end" method="post" action="/user/claim">
+        <div class="field grow">
+          <label class="label" for="claim-key2">@[strings/account_add_auth]</label>
+          <input class="input mono" id="claim-key2" name="key" type="text" placeholder="@[strings/account_add_auth_placeholder]" required>
+        </div>
+        <button class="btn outline" type="submit">{plus}@[strings/account_bind]</button>
+      </form>
+    </div>
+  </section>
+  <section class="panel account-section">
+    <div class="panel-head">
+      <h3 class="panel-title">{shield}@[strings/account_admin_area]<span class="count">@[strings/role_admin]</span></h3>
+      <span class="hint">@[strings/account_admin_hint]</span>
+    </div>
+    <div class="panel-body">{admin_area}</div>
+  </section>
+</div>

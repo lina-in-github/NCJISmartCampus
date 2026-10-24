@@ -973,14 +973,8 @@ pub fn plain_error(status: StatusCode, title: &str, msg: &str) -> Response {
         r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
-<style>
-body{{font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif;background:#f4f5fb;color:#101828;
-display:flex;align-items:center;justify-content:center;min-height:100dvh;margin:0;padding:24px}}
-.box{{background:#fff;border:1px solid #e4e7ec;border-radius:20px;padding:32px;max-width:440px;
-box-shadow:0 20px 50px -20px rgba(16,24,40,.2);text-align:center}}
-h1{{font-size:20px;margin:0 0 8px}}p{{color:#475467;margin:0 0 20px;line-height:1.6}}
-a{{display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:10px 20px;border-radius:10px}}
-</style></head><body><div class="box"><h1>{}</h1><p>{}</p><a href="/">@[strings/error_back_home]</a></div></body></html>"#,
+<link rel="stylesheet" href="/static/app.css?v=5">
+</head><body class="error-page"><div class="error-box"><h1>{}</h1><p>{}</p><a class="btn primary" href="/">@[strings/error_back_home]</a></div></body></html>"#,
         html_escape(title),
         html_escape(msg),
         title = html_escape(title)

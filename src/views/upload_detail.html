@@ -1,0 +1,61 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submission/{sub_id}/all">{arrow}{back_label}</a>
+    <h2 class="page-title">{title}</h2>
+    <p class="page-sub">{uploader} · {created}</p>
+  </div>
+  <div class="page-actions">
+    {status}
+    <a class="btn outline" href="{base}submission/{sub_id}/all">{folder}@[strings/upload_view_submission]</a>
+  </div>
+</div>
+<div class="detail-grid">
+  <div class="detail-main">
+    <div class="panel">
+      <div class="panel-head">
+        <h3 class="panel-title">{paperclip}@[strings/upload_attachments_title]</h3>
+        <span class="hint">{time}</span>
+      </div>
+      <div class="panel-body">
+        {desc}
+        <div class="divider"></div>
+        {gallery}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3 class="panel-title">{reply}@[strings/upload_replies]<span class="count">{reply_count}</span></h3>
+        <span class="hint">@[strings/upload_reply_role_hint]</span>
+      </div>
+      <div class="panel-body">
+        {replies}
+        <div class="divider"></div>
+        {reply_form}
+      </div>
+    </div>
+  </div>
+  <aside class="detail-side">
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{user}@[strings/upload_info_title]</h3></div>
+      <div class="panel-body">
+        <div class="kv"><dt>@[strings/upload_info_uploader]</dt><dd>{uploader}</dd></div>
+        <div class="kv"><dt>@[strings/upload_info_role]</dt><dd>{role_badge}</dd></div>
+        {student_row}
+        <div class="kv"><dt>@[strings/type_generic]</dt><dd><a href="{base}submission/{sub_id}/">{sub_name}</a></dd></div>
+        <div class="kv"><dt>@[strings/upload_info_submitted_at]</dt><dd>{created}</dd></div>
+        {last_reply_row}
+        <div class="kv"><dt>@[strings/upload_info_reply_count]</dt><dd>{reply_count}</dd></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-body stack">
+        {reupload}
+        {delete_upload}
+        <a class="btn ghost block" href="{base}uploads/">{back}@[strings/upload_back_list]</a>
+      </div>
+    </div>
+    <div class="account-note">
+      {note}
+    </div>
+  </aside>
+</div>

@@ -1,0 +1,14 @@
+<form class="reply-form" data-reply-form data-upload="{upload_id}">
+  <div class="quick-replies">
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_done_text]">@[strings/upload_quick_done]</button>
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_supplement_text]">@[strings/upload_quick_supplement]</button>
+    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_received_text]">@[strings/upload_quick_received]</button>
+  </div>
+  <div class="field">
+    <textarea class="textarea" name="content" maxlength="5000" placeholder="@[strings/upload_reply_placeholder]" required></textarea>
+  </div>
+  <div class="form-actions">
+    <button class="btn primary" type="submit">{send}@[strings/upload_reply_publish]</button>
+    <span class="hint">@[strings/upload_reply_note]</span>
+  </div>
+</form>

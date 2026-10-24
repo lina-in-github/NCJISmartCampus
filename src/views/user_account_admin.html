@@ -1,0 +1,40 @@
+<div class="stack">
+  <form class="stack" method="post" action="/user/class">
+    <div class="form-grid">
+      <div class="field">
+        <label class="label" for="class-name">@[strings/account_class_name]</label>
+        <input class="input" id="class-name" name="name" type="text" maxlength="40" required placeholder="@[strings/account_class_name_placeholder]">
+      </div>
+      <div class="field">
+        <label class="label" for="class-auth">@[strings/account_class_create_as]</label>
+        <select class="select" id="class-auth" name="admin_auth_id">{class_opts}</select>
+      </div>
+      <div class="field full">
+        <label class="label" for="class-desc">@[strings/account_class_desc]</label>
+        <textarea class="textarea" id="class-desc" name="desc" maxlength="500" placeholder="@[strings/account_class_desc_placeholder]"></textarea>
+      </div>
+    </div>
+    <div><button class="btn primary" type="submit">{plus}@[strings/account_class_create]</button></div>
+  </form>
+  <div class="divider"></div>
+  <form class="stack" id="member-form">
+    <div class="form-grid">
+      {admin_select}
+      <div class="field">
+        <label class="label" for="member-kind">@[strings/account_member_role]</label>
+        <select class="select" id="member-kind">
+          <option value="Student">@[strings/role_student]</option>
+          <option value="Teacher">@[strings/role_teacher]</option>
+          <option value="Admin">@[strings/role_admin]</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="member-quantity">@[strings/account_member_quantity]</label>
+        <input class="input" id="member-quantity" type="number" min="1" max="100" value="1">
+      </div>
+    </div>
+    <div><button class="btn outline" type="submit">{key}@[strings/account_member_generate]</button></div>
+    <div class="member-result" id="member-result" hidden></div>
+    <p class="hint">@[strings/account_member_note]</p>
+  </form>
+</div>

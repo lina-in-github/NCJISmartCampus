@@ -19,15 +19,7 @@ mod tools;
 mod types;
 mod view;
 
-const FAVICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#0ea5e9"/>
-</linearGradient></defs>
-<rect width="64" height="64" rx="16" fill="url(#g)"/>
-<path d="m12 26 20-9 20 9-20 9Z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
-<path d="M19 30v9c0 4 5.8 7 13 7s13-3 13-7v-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-<path d="M52 26v12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-</svg>"##;
+const FAVICON: &str = include_str!("./assets/favicon.csv"); 
 
 async fn static_css() -> Response {
     (

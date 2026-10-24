@@ -132,8 +132,7 @@
   function fallbackCopy(text) {
     var ta = document.createElement("textarea");
     ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
+    ta.className = "copy-helper";
     document.body.appendChild(ta);
     ta.select();
     var ok = false;
@@ -220,9 +219,7 @@
 
   $$(".flash").forEach(function (el) {
     setTimeout(function () {
-      el.style.transition = "opacity .3s, transform .3s";
-      el.style.opacity = "0";
-      el.style.transform = "translateY(-4px)";
+      el.classList.add("is-hiding");
       setTimeout(function () {
         el.remove();
       }, 320);
@@ -442,7 +439,6 @@
     function syncDeadline() {
       if (!deadlineInput || !noDeadline) return;
       deadlineInput.disabled = noDeadline.checked;
-      deadlineInput.style.opacity = noDeadline.checked ? ".45" : "1";
     }
     if (noDeadline) {
       noDeadline.addEventListener("change", syncDeadline);
@@ -811,8 +807,7 @@
           });
           var all = document.createElement("button");
           all.type = "button";
-          all.className = "btn outline sm";
-          all.style.marginTop = "10px";
+          all.className = "btn outline sm mt-sm";
           all.textContent = S("file_copy_all");
           all.addEventListener("click", function () {
             copyText(data.keys.join("\n"));

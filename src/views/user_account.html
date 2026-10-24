@@ -1,0 +1,27 @@
+<div class="auth-row">
+  <span class="avatar sm{ac}">{initial}</span>
+  <div class="auth-row-main">
+    <div class="auth-row-title">
+      {class_name}
+      {role_badge}
+      {current}
+    </div>
+    <div class="auth-row-sub">
+      <span class="auth-row-name">{auth_name}</span>
+      {student}
+      <span class="key" data-full="{full}" data-mask="{masked}">{masked}</span>
+    </div>
+  </div>
+  <div class="key-actions">
+    <button class="btn ghost sm" type="button" data-rename="{full}" data-name="{auth_name}" title="@[strings/account_rename_identity]" aria-label="@[strings/account_rename_identity]">{pencil}@[strings/common_rename]</button>
+    <button class="btn ghost sm" type="button" data-reveal>@[strings/common_show]</button>
+    <button class="btn ghost sm" type="button" data-copy="{full}" title="@[strings/account_copy_key]">{copy}</button>
+    <form class="enter-form" method="post" action="/user/enter">
+      <input type="hidden" name="auth_id" value="{id}">
+      <button class="btn outline sm" type="submit">{arrow}@[strings/common_enter]</button>
+    </form>
+    <form method="post" action="/user/auth/{id}/delete" data-confirm="{delete_confirm}" data-confirm-text="@[strings/account_delete_confirm_label]">
+      <button class="btn danger sm" type="submit" title="@[strings/account_delete_identity]" aria-label="@[strings/account_delete_identity]">{trash}</button>
+    </form>
+  </div>
+</div>

@@ -501,32 +501,27 @@ fn status_bar(ctx: &LayoutCtx) -> String {
 
 const THEME_BOOT: &str = r#"<script>(function(){try{var p=localStorage.getItem('sc-theme')||document.documentElement.getAttribute('data-pref')||'system';var d=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.dataset.theme=(p==='dark'||(p==='system'&&d))?'dark':'light';}catch(e){}})();</script>"#;
 
-fn document_head(title: &str, theme: &str, with_app_css: bool) -> String {
+fn document_head(title: &str, theme: &str) -> String {
     format!(
         r##"<!doctype html>
 <html lang="{lang}" data-pref="{theme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#4f46e5">
+<meta name="theme-color" content="#0010ff">
 <title>{title} · @[strings/title]</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 {theme_boot}
-{css}
+<link rel="stylesheet" href="/static/app.css?v=5">
 </head>"##,
         theme = esc(theme),
         title = esc(title),
         lang = esc(&crate::strings::current_lang()),
-        theme_boot = THEME_BOOT,
-        css = if with_app_css {
-            r#"<link rel="stylesheet" href="/static/app.css?v=4">"#
-        } else {
-            ""
-        }
+        theme_boot = THEME_BOOT
     )
 }
 
-fn page_footer(scripts: &str, with_app: bool) -> String {
+fn page_footer() -> String {
     format!(
         r#"<div class="toast-wrap" aria-live="polite"></div>
 <dialog id="confirm-dialog" class="dialog">
@@ -561,16 +556,9 @@ fn page_footer(scripts: &str, with_app: bool) -> String {
   </div>
   <img alt="@[strings/common_attachment_preview]">
 </dialog>
-{}
-{}
+<script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script>
 </body>
-</html>"#,
-        if with_app {
-            r#"<script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script>"#
-        } else {
-            ""
-        },
-        scripts
+</html>"#
     )
 }
 
@@ -639,7 +627,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
             if ctx.student_label.is_empty() {
                 String::new()
             } else {
-                format!(r#"<div style="margin-top:8px">{}</div>"#, status_bar(ctx))
+                format!(r#"<div class="side-status">{}</div>"#, status_bar(ctx))
             }
         )
     };
@@ -658,10 +646,10 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         "isAccount": ctx.is_account
     }));
 
-    let mut out = document_head(&ctx.title, &ctx.theme, true);
+    let mut out = document_head(&ctx.title, &ctx.theme);
     let _ = write!(
         out,
-        r#"<body class="fade-in">
+        r#"<body>
 <div class="app-shell">
   <aside class="sidebar">
     <a class="brand" href="{home}" aria-label="@[strings/layout_brand_home]">
@@ -732,7 +720,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         bottom_nav = bottom_nav,
         sc = sc
     );
-    out.push_str(&page_footer("", true));
+    out.push_str(&page_footer());
     out
 }
 
@@ -887,7 +875,7 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
       <div class="auth-divider">@[strings/common_or]</div>
       <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center]</a>
       {demo_keys}
-      <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_footer_note]</p>
+      <p class="hint auth-footnote">@[strings/login_footer_note]</p>
     </div>
   </section>
 </div>"#,
@@ -920,8 +908,8 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
         flash = flash_html(flash)
     );
 
-    let mut out = document_head("@[strings/login_submit]", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
+    let mut out = document_head("@[strings/login_submit]", "system");
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
     out
 }
 
@@ -982,13 +970,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
         .collect::<String>();
 
     let error_html = error
-        .map(|e| {
-            format!(
-                r#"<div class="alert" style="margin-bottom:14px">{}{}</div>"#,
-                icon("alert"),
-                esc(e)
-            )
-        })
+        .map(|e| format!(r#"<div class="alert">{}{}</div>"#, icon("alert"), esc(e)))
         .unwrap_or_default();
 
     let body = format!(
@@ -1002,7 +984,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
         {mode_switch}
       </div>
       <div class="auth-heading">
-        <span class="role-icon {icon_class}" style="margin-bottom:12px">{role_icon}</span>
+        <span class="role-icon {icon_class}">{role_icon}</span>
         <h2>{title}</h2>
         <p>{desc}</p>
       </div>
@@ -1025,10 +1007,10 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
         </details>
       </form>
       <div class="auth-divider">@[strings/login_other_identity]</div>
-      <div class="mode-switch" style="width:100%;justify-content:space-between">{role_links}</div>
+      <div class="mode-switch fill">{role_links}</div>
       <div class="auth-divider">@[strings/common_or]</div>
       <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center_link]</a>
-      <p class="hint" style="margin-top:16px;text-align:center">@[strings/login_authorized_note]</p>
+      <p class="hint auth-footnote">@[strings/login_authorized_note]</p>
     </div>
   </section>
 </div>"#,
@@ -1051,8 +1033,8 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
         user_icon = icon("user")
     );
 
-    let mut out = document_head(title, "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
+    let mut out = document_head(title, "system");
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
     out
 }
 
@@ -1087,7 +1069,7 @@ fn submission_card_link(
         truncate(&row.desc, 90)
     };
     format!(
-        r#"<article class="card hover submission-card fade-in">
+        r#"<article class="card hover submission-card">
   <a class="card-link" href="{href}" aria-label="@[strings/common_open]@[strings/type_generic] {name}"></a>
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
@@ -1159,7 +1141,7 @@ fn submission_card_manage(
         String::new()
     };
     format!(
-        r#"<article class="card submission-card fade-in">
+        r#"<article class="card submission-card">
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
     {deadline}
@@ -1219,7 +1201,7 @@ fn upload_row_html(upload: &UploadRow, now: i64, base: &str, staff: bool) -> Str
         String::new()
     };
     format!(
-        r#"<div class="list-row fade-in">
+        r#"<div class="list-row">
   <a class="card-link" href="{href}" aria-label="@[strings/common_view]@[strings/page_uploads] {title}"></a>
   <span class="avatar sm{avatar_class}">{initial}</span>
   <div class="row-main">
@@ -1356,34 +1338,13 @@ pub fn home(
         format!(r#"<div class="list">{rows}</div>"#)
     };
 
-    let float_title = match ctx.page_role.as_str() {
-        "teacher" => "@[strings/home_float_pending]",
-        "admin" => "@[strings/home_float_admin]",
-        "parent" => "@[strings/home_float_parent]",
-        _ => "@[strings/home_float_self]",
-    };
-    let float_sub = match ctx.page_role.as_str() {
-        "teacher" => "@[strings/home_float_pending_sub]",
-        "admin" => "@[strings/home_float_admin_sub]",
-        _ => "@[strings/home_float_default_sub]",
-    };
-
     let body = format!(
-        r#"<section class="hero {role} fade-in">
+        r#"<section class="hero">
   <div class="hero-copy">
     <span class="hero-eyebrow">{spark} {eyebrow}</span>
     <h2 class="hero-title">{hero_title}</h2>
     <p class="hero-desc">{hero_desc}</p>
     <div class="hero-actions">{hero_actions}</div>
-  </div>
-  <div class="hero-art" aria-hidden="true">
-    <span class="hero-ring"></span><span class="hero-ring r2"></span><span class="hero-ring r3"></span>
-    <div class="float-card">
-      <div class="fc-top"><span>{float_title}</span><span>{role_label}</span></div>
-      <div class="fc-title">{float_sub}</div>
-      <div class="fc-line"></div><div class="fc-line w70"></div><div class="fc-line w45"></div>
-      <div class="fc-foot"><span class="fc-dot"></span>{class_name}</div>
-    </div>
   </div>
 </section>
 <div class="stats">{stats_html}</div>
@@ -1401,16 +1362,11 @@ pub fn home(
   </div>
   {uploads_html}
 </section>"#,
-        role = ctx.page_role,
         spark = icon("sparkles"),
         eyebrow = eyebrow,
         hero_title = hero_title,
         hero_desc = esc(&hero_desc),
         hero_actions = hero_actions,
-        float_title = float_title,
-        float_sub = float_sub,
-        role_label = esc(&role_label(&ctx.page_role)),
-        class_name = esc(&ctx.class_name),
         stats_html = stats_html,
         inbox = icon("inbox"),
         arrow = icon("arrow-right"),
@@ -1491,71 +1447,7 @@ pub fn new_submission(ctx: &LayoutCtx) -> String {
     let base = ctx.base();
     let default_deadline = fmt_datetime_local(crate::tools::now_ts() + 3 * 86_400 + 12 * 3600);
     let body = format!(
-        r#"<div class="page-head">
-  <div>
-    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
-    <h2 class="page-title" style="margin-top:6px">@[strings/new_page_title]</h2>
-    <p class="page-sub">@[strings/new_subtitle]</p>
-  </div>
-</div>
-<div class="detail-grid">
-  <form class="form-card" id="submission-form">
-    <div class="form-grid">
-      <div class="field full">
-        <label class="label" for="sub-name">@[strings/new_name_label] <span class="req">*</span></label>
-        <input class="input" id="sub-name" name="name" type="text" maxlength="200" required
-               placeholder="@[strings/new_name_placeholder]">
-      </div>
-      <div class="field">
-        <label class="label" for="sub-type">@[strings/new_type_label]</label>
-        <select class="select" id="sub-type" name="type">
-          <option value="homework">@[strings/type_homework]</option>
-          <option value="open call">@[strings/type_open_call]</option>
-          <option value="leave request">@[strings/type_leave_request]</option>
-          <option value="notice">@[strings/type_notice]</option>
-          <option value="other">@[strings/type_other]</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="label" for="sub-deadline">@[strings/new_deadline_label]</label>
-        <input class="input" id="sub-deadline" name="deadline" type="datetime-local" value="{default_deadline}">
-        <label class="check"><input type="checkbox" id="no-deadline"> @[strings/new_no_deadline]</label>
-      </div>
-      <div class="field full">
-        <label class="label" for="sub-desc">@[strings/new_desc_label]</label>
-        <textarea class="textarea" id="sub-desc" name="desc" maxlength="2000"
-                  placeholder="@[strings/new_desc_placeholder]"></textarea>
-        <span class="hint" data-counter="sub-desc" data-max="2000">0 / 2000</span>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn primary" type="submit" id="submission-submit">{plus}@[strings/nav_publish]</button>
-      <a class="btn ghost" href="{base}submissions/">@[strings/common_cancel]</a>
-      <span class="spacer"></span>
-      <span class="hint">@[strings/new_publish_identity]：{display}</span>
-    </div>
-  </form>
-  <aside class="stack">
-    <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{spark}@[strings/new_tips_title]</h3></div>
-      <div class="panel-body">
-        <div class="stack text-sm" style="color:var(--text-2)">
-          <p>@[strings/new_tip1]</p>
-          <p>@[strings/new_tip2]</p>
-          <p>@[strings/new_tip3]</p>
-          <p>@[strings/new_tip4]</p>
-        </div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-body">
-        <div class="kv"><dt>@[strings/new_current_class]</dt><dd>{class_name}</dd></div>
-        <div class="kv"><dt>@[strings/new_publish_identity]</dt><dd>{role}</dd></div>
-        <div class="kv"><dt>@[strings/new_data_scope]</dt><dd>@[strings/new_data_scope_value]</dd></div>
-      </div>
-    </div>
-  </aside>
-</div>"#,
+        include_str!("./views/new_submission.html"),
         base = base,
         arrow = icon("arrow-left"),
         default_deadline = default_deadline,
@@ -1725,33 +1617,7 @@ pub fn submission_all(
         format!(r#"<div class="list">{rows_html}</div>"#)
     };
     let body = format!(
-        r#"<div class="page-head">
-  <div>
-    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
-    <h2 class="page-title" style="margin-top:6px">{name}</h2>
-    <p class="page-sub">{created_name} @[strings/page_publish] · {created}</p>
-  </div>
-  <div class="page-actions">{upload_btn}{export}{delete}</div>
-</div>
-<section class="card pad-lg" style="margin-bottom:18px">
-  <div class="submission-top">
-    <span class="chip type">{type_label}</span>
-    {deadline}
-  </div>
-  <p style="color:var(--text-2);font-size:13.5px;line-height:1.75;margin-top:4px">{desc}</p>
-  <div class="submission-meta">
-    <span class="meta-item">{file_icon}<span>{count_label}</span></span>
-    <span class="meta-item">{clock_icon}<span>{published}</span></span>
-    {pending}
-  </div>
-</section>
-<section class="section" style="margin-top:0">
-  <div class="section-head">
-    <h2 class="section-title">{folder}{list_title}<span class="count">{n}</span></h2>
-    <span class="hint">{list_hint}</span>
-  </div>
-  {list}
-</section>"#,
+        include_str!("./views/submission_all.html"),
         base = base,
         arrow = icon("arrow-left"),
         name = esc(&sub.name),
@@ -1836,65 +1702,7 @@ pub fn upload_form(
         })
         .unwrap_or_default();
     let body = format!(
-        r#"<div class="page-head">
-  <div>
-    <a class="back-link" href="{base}submission/{id}/">{arrow}@[strings/upload_back_submission]</a>
-    <h2 class="page-title" style="margin-top:6px">{page_title}</h2>
-    <p class="page-sub">@[strings/upload_form_subtitle]</p>
-  </div>
-</div>
-<div class="detail-grid">
-  <form class="form-card" id="upload-form" data-submission="{id}">
-    <div class="form-grid">
-      <div class="field full">
-        <label class="label" for="upload-title">@[strings/upload_form_title_label] <span class="req">*</span></label>
-        <input class="input" id="upload-title" type="text" maxlength="200" required value="{default_title}">
-        <span class="hint">@[strings/upload_form_title_hint]</span>
-      </div>
-      <div class="field full">
-        <label class="label" for="upload-desc">@[strings/new_desc_label]</label>
-        <textarea class="textarea" id="upload-desc" maxlength="5000"
-                  placeholder="@[strings/upload_form_desc_placeholder]"></textarea>
-        <span class="hint" data-counter="upload-desc" data-max="5000">0 / 5000</span>
-      </div>
-      <div class="field full">
-        <label class="label">@[strings/common_attachment]</label>
-        <div class="dropzone" id="dropzone">
-          <input type="file" id="file-input" multiple>
-          <span class="dropzone-icon">{upload}</span>
-          <span class="dropzone-text">@[strings/upload_form_drop]</span>
-          <span class="dropzone-hint">@[strings/upload_form_drop_hint]</span>
-        </div>
-        <div class="file-list" id="file-list"></div>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn primary" type="submit" id="upload-submit">{send}@[strings/page_uploads]</button>
-      <a class="btn ghost" href="{base}submission/{id}/">@[strings/common_cancel]</a>
-      <span class="spacer"></span>
-      <span class="hint">{existing_hint}{last_link}</span>
-    </div>
-  </form>
-  <aside class="stack">
-    <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{folder}@[strings/upload_form_submission_info]</h3></div>
-      <div class="panel-body">
-        <div class="stack">
-          <div><span class="chip type">{type_label}</span> {deadline}</div>
-          <strong style="font-size:15px">{name}</strong>
-          <p class="text-sm" style="color:var(--text-2);line-height:1.7">{desc}</p>
-        </div>
-        <div class="divider"></div>
-        <div class="kv"><dt>@[strings/upload_form_publisher]</dt><dd>{created_name}</dd></div>
-        <div class="kv"><dt>@[strings/upload_form_published_at]</dt><dd>{created}</dd></div>
-        <div class="kv"><dt>@[strings/new_deadline_label]</dt><dd>{deadline_text}</dd></div>
-      </div>
-    </div>
-    <div class="account-note">
-      @[strings/upload_form_tip]
-    </div>
-  </aside>
-</div>"#,
+        include_str!("./views/upload_form.html"),
         base = base,
         arrow = icon("arrow-left"),
         id = esc(&sub.id),
@@ -1998,7 +1806,7 @@ fn attachment_gallery(data: &Value) -> String {
 fn replies_html(replies: &[ReplyRow], admin: bool, now: i64) -> String {
     if replies.is_empty() {
         return format!(
-            r#"<div class="empty" style="padding:30px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/upload_reply_empty_title]</div><div class="empty-desc">{desc}</div></div>"#,
+            r#"<div class="empty compact"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/upload_reply_empty_title]</div><div class="empty-desc">{desc}</div></div>"#,
             icon = icon("reply"),
             desc = if admin {
                 "@[strings/upload_reply_empty_staff]"
@@ -2020,18 +1828,7 @@ fn replies_html(replies: &[ReplyRow], admin: bool, now: i64) -> String {
         };
         let _ = write!(
             out,
-            r#"<div class="reply">
-  <span class="avatar sm{ac}">{initial}</span>
-  <div class="reply-body">
-    <div class="reply-head">
-      <span class="reply-author">{author}</span>
-      {role_badge}
-      <span class="reply-time">{time}</span>
-      <span style="flex:1"></span>{delete}
-    </div>
-    <div class="reply-content">{content}</div>
-  </div>
-</div>"#,
+            include_str!("./views/replies_item.html"),
             ac = avatar_class(&r.role),
             initial = esc(&initial(&r.replier_name)),
             author = esc(&r.replier_name),
@@ -2057,20 +1854,7 @@ pub fn upload_detail(
     let base = ctx.base();
     let reply_form = if staff {
         format!(
-            r#"<form class="reply-form" data-reply-form data-upload="{upload_id}">
-  <div class="quick-replies">
-    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_done_text]">@[strings/upload_quick_done]</button>
-    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_supplement_text]">@[strings/upload_quick_supplement]</button>
-    <button class="quick-reply" type="button" data-quick-reply="@[strings/upload_quick_received_text]">@[strings/upload_quick_received]</button>
-  </div>
-  <div class="field">
-    <textarea class="textarea" name="content" maxlength="5000" placeholder="@[strings/upload_reply_placeholder]" required></textarea>
-  </div>
-  <div class="form-actions" style="margin-top:12px;padding-top:12px">
-    <button class="btn primary" type="submit">{send}@[strings/upload_reply_publish]</button>
-    <span class="hint">@[strings/upload_reply_note]</span>
-  </div>
-</form>"#,
+            include_str!("./views/upload_detail_staff.html"),
             upload_id = esc(&upload.id),
             send = icon("send")
         )
@@ -2112,67 +1896,7 @@ pub fn upload_detail(
         String::new()
     };
     let body = format!(
-        r#"<div class="page-head">
-  <div>
-    <a class="back-link" href="{base}submission/{sub_id}/all">{arrow}{back_label}</a>
-    <h2 class="page-title" style="margin-top:6px">{title}</h2>
-    <p class="page-sub">{uploader} · {created}</p>
-  </div>
-  <div class="page-actions">
-    {status}
-    <a class="btn outline" href="{base}submission/{sub_id}/all">{folder}@[strings/upload_view_submission]</a>
-  </div>
-</div>
-<div class="detail-grid">
-  <div class="detail-main">
-    <div class="panel">
-      <div class="panel-head">
-        <h3 class="panel-title">{paperclip}@[strings/upload_attachments_title]</h3>
-        <span class="hint">{time}</span>
-      </div>
-      <div class="panel-body">
-        {desc}
-        <div class="divider"></div>
-        {gallery}
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-head">
-        <h3 class="panel-title">{reply}@[strings/upload_replies]<span class="count">{reply_count}</span></h3>
-        <span class="hint">@[strings/upload_reply_role_hint]</span>
-      </div>
-      <div class="panel-body">
-        {replies}
-        <div class="divider"></div>
-        {reply_form}
-      </div>
-    </div>
-  </div>
-  <aside class="detail-side">
-    <div class="panel">
-      <div class="panel-head"><h3 class="panel-title">{user}@[strings/upload_info_title]</h3></div>
-      <div class="panel-body">
-        <div class="kv"><dt>@[strings/upload_info_uploader]</dt><dd>{uploader}</dd></div>
-        <div class="kv"><dt>@[strings/upload_info_role]</dt><dd>{role_badge}</dd></div>
-        {student_row}
-        <div class="kv"><dt>@[strings/type_generic]</dt><dd><a href="{base}submission/{sub_id}/">{sub_name}</a></dd></div>
-        <div class="kv"><dt>@[strings/upload_info_submitted_at]</dt><dd>{created}</dd></div>
-        {last_reply_row}
-        <div class="kv"><dt>@[strings/upload_info_reply_count]</dt><dd>{reply_count}</dd></div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-body stack">
-        {reupload}
-        {delete_upload}
-        <a class="btn ghost block" href="{base}uploads/">{back}@[strings/upload_back_list]</a>
-      </div>
-    </div>
-    <div class="account-note">
-      {note}
-    </div>
-  </aside>
-</div>"#,
+        include_str!("./views/upload_detail.html"),
         base = base,
         sub_id = esc(&sub.id),
         sub_name = esc(&sub.name),
@@ -2188,10 +1912,7 @@ pub fn upload_detail(
         desc = if upload.desc.trim().is_empty() {
             r#"<p class="hint">@[strings/upload_no_desc]</p>"#.to_string()
         } else {
-            format!(
-                r#"<p style="color:var(--text-2);line-height:1.8;white-space:pre-wrap">{}</p>"#,
-                esc(&upload.desc)
-            )
+            format!(r#"<p class="desc-text">{}</p>"#, esc(&upload.desc))
         },
         gallery = attachment_gallery(&upload.data),
         reply = icon("reply"),
@@ -2239,68 +1960,14 @@ pub fn user_guest(
     let note = session_note
         .map(|n| {
             format!(
-                r#"<div class="account-note" style="margin-bottom:14px">{}{}</div>"#,
+                r#"<div class="account-note spaced">{}{}</div>"#,
                 icon("key"),
                 esc(n)
             )
         })
         .unwrap_or_default();
     let body = format!(
-        r#"<div class="auth-shell">
-  {hero}
-  <section class="auth-panel">
-    <div class="auth-card wide">
-      {mobile_brand}
-      <div class="auth-topline">
-        <a class="back-link" href="/login">{arrow}@[strings/account_back_login]</a>
-        {mode_switch}
-      </div>
-      <div class="auth-heading">
-        <h2>@[strings/role_account]</h2>
-        <p>@[strings/account_login_desc]</p>
-      </div>
-      {flash}
-      {note}
-      <div class="login-pair" style="grid-template-columns:minmax(0,1fr)">
-        <form class="login-form" method="post" action="/user/login">
-          <div class="field">
-            <label class="label" for="username">@[strings/account_username]</label>
-            <input class="input" id="username" name="username" type="text" autocomplete="username" required>
-          </div>
-          <div class="field">
-            <label class="label" for="password">@[strings/account_password]</label>
-            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
-          </div>
-          <button class="btn primary block" type="submit">{lock}@[strings/account_login]</button>
-          <p class="hint" style="margin-top:10px">@[strings/account_demo_accounts]</p>
-        </form>
-        <div class="auth-divider">@[strings/account_first_use]</div>
-        <form class="login-form" method="post" action="/user/register">
-          <div class="form-grid">
-            <div class="field">
-              <label class="label" for="new-username">@[strings/account_username]</label>
-              <input class="input" id="new-username" name="username" type="text" autocomplete="username" required>
-            </div>
-            <div class="field">
-              <label class="label" for="new-password">@[strings/account_password]</label>
-              <input class="input" id="new-password" name="password" type="password" autocomplete="new-password" minlength="6" required>
-            </div>
-            <div class="field">
-              <label class="label" for="new-password2">@[strings/account_confirm_password]</label>
-              <input class="input" id="new-password2" name="password2" type="password" autocomplete="new-password" minlength="6" required>
-            </div>
-            <div class="field">
-              <label class="label" for="claim-key">@[strings/login_key_label]</label>
-              <input class="input mono" id="claim-key" name="key" type="text" value="{prefill_key}" placeholder="@[strings/account_key_optional]">
-            </div>
-          </div>
-          <button class="btn outline block" type="submit" style="margin-top:16px">{key}@[strings/account_create_bind]</button>
-          <p class="hint" style="margin-top:10px">@[strings/account_key_note]</p>
-        </form>
-      </div>
-    </div>
-  </section>
-</div>"#,
+        include_str!("./views/user_guest.html"),
         hero = auth_hero("account"),
         mobile_brand = auth_brand(true),
         arrow = icon("arrow-left"),
@@ -2311,8 +1978,8 @@ pub fn user_guest(
         key = icon("key"),
         prefill_key = esc(prefill_key)
     );
-    let mut out = document_head("@[strings/role_account]", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=4"></script><script src="/static/app.js?v=4"></script></body></html>"#));
+    let mut out = document_head("@[strings/role_account]", "system");
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
     out
 }
 
@@ -2370,7 +2037,7 @@ pub fn user_account(
 
     let auths_html = if auths.is_empty() {
         format!(
-            r#"<div class="empty" style="padding:34px 18px"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/account_no_auths_title]</div><div class="empty-desc">@[strings/account_no_auths_desc]</div></div>"#,
+            r#"<div class="empty compact"><span class="empty-icon">{icon}</span><div class="empty-title">@[strings/account_no_auths_title]</div><div class="empty-desc">@[strings/account_no_auths_desc]</div></div>"#,
             icon = icon("key")
         )
     } else {
@@ -2399,33 +2066,7 @@ pub fn user_account(
                     String::new()
                 };
                 format!(
-                    r#"<div class="auth-row">
-  <span class="avatar sm{ac}">{initial}</span>
-  <div class="auth-row-main">
-    <div class="auth-row-title">
-      {class_name}
-      {role_badge}
-      {current}
-    </div>
-    <div class="auth-row-sub">
-      <span class="auth-row-name">{auth_name}</span>
-      {student}
-      <span class="key" data-full="{full}" data-mask="{masked}">{masked}</span>
-    </div>
-  </div>
-  <div class="key-actions">
-    <button class="btn ghost sm" type="button" data-rename="{full}" data-name="{auth_name}" title="@[strings/account_rename_identity]" aria-label="@[strings/account_rename_identity]">{pencil}@[strings/common_rename]</button>
-    <button class="btn ghost sm" type="button" data-reveal>@[strings/common_show]</button>
-    <button class="btn ghost sm" type="button" data-copy="{full}" title="@[strings/account_copy_key]">{copy}</button>
-    <form class="enter-form" method="post" action="/user/enter">
-      <input type="hidden" name="auth_id" value="{id}">
-      <button class="btn outline sm" type="submit">{arrow}@[strings/common_enter]</button>
-    </form>
-    <form method="post" action="/user/auth/{id}/delete" data-confirm="{delete_confirm}" data-confirm-text="@[strings/account_delete_confirm_label]">
-      <button class="btn danger sm" type="submit" title="@[strings/account_delete_identity]" aria-label="@[strings/account_delete_identity]">{trash}</button>
-    </form>
-  </div>
-</div>"#,
+                    include_str!("./views/user_account.html"),
                     ac = avatar_class(&a.role),
                     initial = esc(&initial(&display)),
                     class_name = esc(&a.class_name),
@@ -2496,46 +2137,7 @@ pub fn user_account(
             })
             .collect();
         format!(
-            r#"<div class="stack">
-  <form class="stack" method="post" action="/user/class">
-    <div class="form-grid">
-      <div class="field">
-        <label class="label" for="class-name">@[strings/account_class_name]</label>
-        <input class="input" id="class-name" name="name" type="text" maxlength="40" required placeholder="@[strings/account_class_name_placeholder]">
-      </div>
-      <div class="field">
-        <label class="label" for="class-auth">@[strings/account_class_create_as]</label>
-        <select class="select" id="class-auth" name="admin_auth_id">{class_opts}</select>
-      </div>
-      <div class="field full">
-        <label class="label" for="class-desc">@[strings/account_class_desc]</label>
-        <textarea class="textarea" id="class-desc" name="desc" maxlength="500" placeholder="@[strings/account_class_desc_placeholder]"></textarea>
-      </div>
-    </div>
-    <div><button class="btn primary" type="submit">{plus}@[strings/account_class_create]</button></div>
-  </form>
-  <div class="divider"></div>
-  <form class="stack" id="member-form">
-    <div class="form-grid">
-      {admin_select}
-      <div class="field">
-        <label class="label" for="member-kind">@[strings/account_member_role]</label>
-        <select class="select" id="member-kind">
-          <option value="Student">@[strings/role_student]</option>
-          <option value="Teacher">@[strings/role_teacher]</option>
-          <option value="Admin">@[strings/role_admin]</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="label" for="member-quantity">@[strings/account_member_quantity]</label>
-        <input class="input" id="member-quantity" type="number" min="1" max="100" value="1">
-      </div>
-    </div>
-    <div><button class="btn outline" type="submit">{key}@[strings/account_member_generate]</button></div>
-    <div class="member-result" id="member-result" hidden></div>
-    <p class="hint">@[strings/account_member_note]</p>
-  </form>
-</div>"#,
+            include_str!("./views/user_account_admin.html"),
             admin_select = admin_select,
             class_opts = class_opts,
             plus = icon("plus"),
@@ -2544,98 +2146,14 @@ pub fn user_account(
     };
 
     let body = format!(
-        r#"{flash}
-<section class="account-hero">
-  <span class="avatar lg">{initial}</span>
-  <div class="account-meta">
-    <h2>{display}</h2>
-    <p class="username">@{username}</p>
-  </div>
-  <div class="account-stats">
-    <div class="account-stat"><strong>{n_auths}</strong><span>@[strings/account_stats_auths]</span></div>
-    <div class="account-stat"><strong>{n_classes}</strong><span>@[strings/account_stats_classes]</span></div>
-    <div class="account-stat"><strong>{n_admin}</strong><span>@[strings/account_stats_admin]</span></div>
-  </div>
-</section>
-<div class="account-grid">
-  <section class="panel">
-    <div class="panel-head"><h3 class="panel-title">{settings}@[strings/login_feature_prefs]</h3></div>
-    <div class="panel-body">
-      <form class="stack" method="post" action="/user/prefs" id="prefs-form">
-        <div class="field">
-          <label class="label" for="display-name">@[strings/account_display_name]</label>
-          <input class="input" id="display-name" name="display_name" type="text" maxlength="40" value="{display}">
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label class="label" for="pref-theme">@[strings/account_theme]</label>
-            <select class="select" id="pref-theme" name="theme">{theme_sel}</select>
-          </div>
-          <div class="field">
-            <label class="label" for="pref-mode">@[strings/account_default_view]</label>
-            <select class="select" id="pref-mode" name="mode">{mode_sel}</select>
-          </div>
-        </div>
-        <div><button class="btn primary" type="submit">@[strings/account_save_prefs]</button></div>
-      </form>
-    </div>
-  </section>
-  <section class="panel">
-    <div class="panel-head"><h3 class="panel-title">{lock}@[strings/account_security]</h3></div>
-    <div class="panel-body">
-      <form class="stack" method="post" action="/user/password">
-        <div class="field">
-          <label class="label" for="old-pw">@[strings/account_current_password]</label>
-          <input class="input" id="old-pw" name="old" type="password" autocomplete="current-password" required>
-        </div>
-        <div class="form-grid">
-          <div class="field">
-            <label class="label" for="new-pw">@[strings/account_new_password]</label>
-            <input class="input" id="new-pw" name="new" type="password" minlength="6" autocomplete="new-password" required>
-          </div>
-          <div class="field">
-            <label class="label" for="new-pw2">@[strings/account_confirm_new_password]</label>
-            <input class="input" id="new-pw2" name="new2" type="password" minlength="6" autocomplete="new-password" required>
-          </div>
-        </div>
-        <div><button class="btn primary" type="submit">@[strings/account_change_password]</button></div>
-      </form>
-      <div class="divider"></div>
-      <form method="post" action="/user/logout">
-        <button class="btn danger block" type="submit">{logout}@[strings/account_logout]</button>
-      </form>
-    </div>
-  </section>
-  <section class="panel account-section">
-    <div class="panel-head">
-      <h3 class="panel-title">{key}@[strings/account_my_auths]<span class="count">{n_auths}</span></h3>
-      <span class="hint">@[strings/common_key_only_visible]</span>
-    </div>
-    <div class="panel-body">
-      {auths}
-      <div class="divider"></div>
-      <form class="row" method="post" action="/user/claim" style="align-items:flex-end">
-        <div class="field grow">
-          <label class="label" for="claim-key2">@[strings/account_add_auth]</label>
-          <input class="input mono" id="claim-key2" name="key" type="text" placeholder="@[strings/account_add_auth_placeholder]" required>
-        </div>
-        <button class="btn outline" type="submit">{plus}@[strings/account_bind]</button>
-      </form>
-    </div>
-  </section>
-  <section class="panel account-section">
-    <div class="panel-head">
-      <h3 class="panel-title">{shield}@[strings/account_admin_area]<span class="count">@[strings/role_admin]</span></h3>
-      <span class="hint">@[strings/account_admin_hint]</span>
-    </div>
-    <div class="panel-body">{admin_area}</div>
-  </section>
-</div>"#,
+        include_str!("./views/user_account_body.html"),
         flash = flash_html(flash),
         initial = esc(&initial(&display)),
         display = esc(&display),
         username = esc(&user.username),
         n_auths = auths.len(),
+        mode_sel=mode_sel,
+        theme_sel=theme_sel,
         n_classes = classes.len(),
         n_admin = admin_auths.len(),
         settings = icon("settings"),
@@ -2644,6 +2162,7 @@ pub fn user_account(
         shield = icon("shield"),
         logout = icon("logout"),
         plus = icon("plus"),
+
         auths = auths_html,
         admin_area = admin_area
     );
@@ -2652,7 +2171,7 @@ pub fn user_account(
 
 pub fn not_found(ctx: Option<&LayoutCtx>, msg: &str) -> axum::response::Response {
     let body = format!(
-        r#"<div class="empty" style="margin-top:6vh;padding:60px 22px">
+        r#"<div class="empty page-empty">
   <span class="empty-icon">{icon}</span>
   <div class="empty-title">@[strings/error_not_found_title]</div>
   <div class="empty-desc">{msg}</div>

@@ -1,0 +1,55 @@
+<div class="auth-shell">
+  {hero}
+  <section class="auth-panel">
+    <div class="auth-card wide">
+      {mobile_brand}
+      <div class="auth-topline">
+        <a class="back-link" href="/login">{arrow}@[strings/account_back_login]</a>
+        {mode_switch}
+      </div>
+      <div class="auth-heading">
+        <h2>@[strings/role_account]</h2>
+        <p>@[strings/account_login_desc]</p>
+      </div>
+      {flash}
+      {note}
+      <div class="login-pair">
+        <form class="login-form" method="post" action="/user/login">
+          <div class="field">
+            <label class="label" for="username">@[strings/account_username]</label>
+            <input class="input" id="username" name="username" type="text" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label class="label" for="password">@[strings/account_password]</label>
+            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="btn primary block" type="submit">{lock}@[strings/account_login]</button>
+          <p class="hint mt-sm">@[strings/account_demo_accounts]</p>
+        </form>
+        <div class="auth-divider">@[strings/account_first_use]</div>
+        <form class="login-form" method="post" action="/user/register">
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="new-username">@[strings/account_username]</label>
+              <input class="input" id="new-username" name="username" type="text" autocomplete="username" required>
+            </div>
+            <div class="field">
+              <label class="label" for="new-password">@[strings/account_password]</label>
+              <input class="input" id="new-password" name="password" type="password" autocomplete="new-password" minlength="6" required>
+            </div>
+            <div class="field">
+              <label class="label" for="new-password2">@[strings/account_confirm_password]</label>
+              <input class="input" id="new-password2" name="password2" type="password" autocomplete="new-password" minlength="6" required>
+            </div>
+            <div class="field">
+              <label class="label" for="claim-key">@[strings/login_key_label]</label>
+              <input class="input mono" id="claim-key" name="key" type="text" value="{prefill_key}" placeholder="@[strings/account_key_optional]">
+            </div>
+          </div>
+          <button class="btn outline block mt-md" type="submit">{key}@[strings/account_create_bind]</button>
+          <p class="hint mt-sm">@[strings/account_key_note]</p>
+        </form>
+      </div>
+    </div>
+  </section>
+</div>

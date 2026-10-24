@@ -80,6 +80,11 @@ assert_jq "$health" '.ok == true' "健康检查"
 LOGIN_HTML="$(curl -sS "$BASE/login")"
 grep -q '智慧校园' <<<"$LOGIN_HTML" || fail "登录页未渲染"
 if grep -q '@\[strings/' <<<"$LOGIN_HTML"; then fail "登录页存在未替换的字符串标签"; fi
+if grep -q 'style=' <<<"$LOGIN_HTML"; then fail "登录页存在行内样式（HTML/CSS 未解耦）"; fi
+CSS="$(curl -sS "$BASE/static/app.css")"
+grep -q '#0010ff' <<<"$CSS" || fail "CSS 未使用强调色 #0010ff"
+grep -q '#ff0000' <<<"$CSS" || fail "CSS 未使用红色 #ff0000"
+grep -q '#eedd00' <<<"$CSS" || fail "CSS 未使用黄色 #eedd00"
 code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/")"
 assert_eq "$code" "303" "根路径跳转"
 [[ -f "$TMP/strings.db" ]] || fail "strings.db 未生成"
@@ -124,16 +129,18 @@ HOME_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/")"
 grep -q "函数与导数" <<<"$HOME_HTML" || fail "学生首页没有显示班级征集"
 if grep -q "还没有征集" <<<"$HOME_HTML"; then fail "学生首页错误显示暂无征集"; fi
 if grep -q '@\[strings/' <<<"$HOME_HTML"; then fail "学生首页存在未替换的字符串标签"; fi
+if grep -q 'style=' <<<"$HOME_HTML"; then fail "学生首页存在行内样式（HTML/CSS 未解耦）"; fi
 SUBS_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/submissions/")"
 grep -q "函数与导数" <<<"$SUBS_HTML" || fail "学生征集列表为空"
 if grep -q '@\[strings/' <<<"$SUBS_HTML"; then fail "学生征集页存在未替换的字符串标签"; fi
+if grep -q 'style=' <<<"$SUBS_HTML"; then fail "学生征集页存在行内样式（HTML/CSS 未解耦）"; fi
 # 老师空间别名 /home/*/teachers
 curl -sS -c "$TMP/tea-cookie" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/")" "200" "teachers 路径别名"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "林书言" || fail "老师空间页面缺少身份信息"
 # 已登录时 /login 仍展示身份选择，便于切换 auth；/ 则回到当前空间
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login")" "200" "已登录访问登录页"
-curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的身份" || fail "登录页缺少身份选择"
+curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的登录身份" || fail "登录页缺少身份选择"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
 echo "==> 账号入口与角色身份隔离"

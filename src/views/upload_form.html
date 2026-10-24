@@ -1,0 +1,59 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submission/{id}/">{arrow}@[strings/upload_back_submission]</a>
+    <h2 class="page-title">{page_title}</h2>
+    <p class="page-sub">@[strings/upload_form_subtitle]</p>
+  </div>
+</div>
+<div class="detail-grid">
+  <form class="form-card" id="upload-form" data-submission="{id}">
+    <div class="form-grid">
+      <div class="field full">
+        <label class="label" for="upload-title">@[strings/upload_form_title_label] <span class="req">*</span></label>
+        <input class="input" id="upload-title" type="text" maxlength="200" required value="{default_title}">
+        <span class="hint">@[strings/upload_form_title_hint]</span>
+      </div>
+      <div class="field full">
+        <label class="label" for="upload-desc">@[strings/new_desc_label]</label>
+        <textarea class="textarea" id="upload-desc" maxlength="5000"
+                  placeholder="@[strings/upload_form_desc_placeholder]"></textarea>
+        <span class="hint" data-counter="upload-desc" data-max="5000">0 / 5000</span>
+      </div>
+      <div class="field full">
+        <label class="label">@[strings/common_attachment]</label>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="file-input" multiple>
+          <span class="dropzone-icon">{upload}</span>
+          <span class="dropzone-text">@[strings/upload_form_drop]</span>
+          <span class="dropzone-hint">@[strings/upload_form_drop_hint]</span>
+        </div>
+        <div class="file-list" id="file-list"></div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" type="submit" id="upload-submit">{send}@[strings/page_uploads]</button>
+      <a class="btn ghost" href="{base}submission/{id}/">@[strings/common_cancel]</a>
+      <span class="spacer"></span>
+      <span class="hint">{existing_hint}{last_link}</span>
+    </div>
+  </form>
+  <aside class="stack">
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{folder}@[strings/upload_form_submission_info]</h3></div>
+      <div class="panel-body">
+        <div class="stack">
+          <div><span class="chip type">{type_label}</span> {deadline}</div>
+          <strong class="panel-strong">{name}</strong>
+          <p class="text-sm">{desc}</p>
+        </div>
+        <div class="divider"></div>
+        <div class="kv"><dt>@[strings/upload_form_publisher]</dt><dd>{created_name}</dd></div>
+        <div class="kv"><dt>@[strings/upload_form_published_at]</dt><dd>{created}</dd></div>
+        <div class="kv"><dt>@[strings/new_deadline_label]</dt><dd>{deadline_text}</dd></div>
+      </div>
+    </div>
+    <div class="account-note">
+      @[strings/upload_form_tip]
+    </div>
+  </aside>
+</div>

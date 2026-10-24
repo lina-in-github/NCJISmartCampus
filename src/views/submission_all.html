@@ -1,0 +1,27 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
+    <h2 class="page-title">{name}</h2>
+    <p class="page-sub">{created_name} @[strings/page_publish] · {created}</p>
+  </div>
+  <div class="page-actions">{upload_btn}{export}{delete}</div>
+</div>
+<section class="card pad-lg submission-lead">
+  <div class="submission-top">
+    <span class="chip type">{type_label}</span>
+    {deadline}
+  </div>
+  <p class="desc-text">{desc}</p>
+  <div class="submission-meta">
+    <span class="meta-item">{file_icon}<span>{count_label}</span></span>
+    <span class="meta-item">{clock_icon}<span>{published}</span></span>
+    {pending}
+  </div>
+</section>
+<section class="section flush">
+  <div class="section-head">
+    <h2 class="section-title">{folder}{list_title}<span class="count">{n}</span></h2>
+    <span class="hint">{list_hint}</span>
+  </div>
+  {list}
+</section>

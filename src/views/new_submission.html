@@ -1,0 +1,65 @@
+<div class="page-head">
+  <div>
+    <a class="back-link" href="{base}submissions/">{arrow}@[strings/new_back]</a>
+    <h2 class="page-title">@[strings/new_page_title]</h2>
+    <p class="page-sub">@[strings/new_subtitle]</p>
+  </div>
+</div>
+<div class="detail-grid">
+  <form class="form-card" id="submission-form">
+    <div class="form-grid">
+      <div class="field full">
+        <label class="label" for="sub-name">@[strings/new_name_label] <span class="req">*</span></label>
+        <input class="input" id="sub-name" name="name" type="text" maxlength="200" required
+               placeholder="@[strings/new_name_placeholder]">
+      </div>
+      <div class="field">
+        <label class="label" for="sub-type">@[strings/new_type_label]</label>
+        <select class="select" id="sub-type" name="type">
+          <option value="homework">@[strings/type_homework]</option>
+          <option value="open call">@[strings/type_open_call]</option>
+          <option value="leave request">@[strings/type_leave_request]</option>
+          <option value="notice">@[strings/type_notice]</option>
+          <option value="other">@[strings/type_other]</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="label" for="sub-deadline">@[strings/new_deadline_label]</label>
+        <input class="input" id="sub-deadline" name="deadline" type="datetime-local" value="{default_deadline}">
+        <label class="check"><input type="checkbox" id="no-deadline"> @[strings/new_no_deadline]</label>
+      </div>
+      <div class="field full">
+        <label class="label" for="sub-desc">@[strings/new_desc_label]</label>
+        <textarea class="textarea" id="sub-desc" name="desc" maxlength="2000"
+                  placeholder="@[strings/new_desc_placeholder]"></textarea>
+        <span class="hint" data-counter="sub-desc" data-max="2000">0 / 2000</span>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" type="submit" id="submission-submit">{plus}@[strings/nav_publish]</button>
+      <a class="btn ghost" href="{base}submissions/">@[strings/common_cancel]</a>
+      <span class="spacer"></span>
+      <span class="hint">@[strings/new_publish_identity]：{display}</span>
+    </div>
+  </form>
+  <aside class="stack">
+    <div class="panel">
+      <div class="panel-head"><h3 class="panel-title">{spark}@[strings/new_tips_title]</h3></div>
+      <div class="panel-body">
+        <div class="stack text-sm">
+          <p>@[strings/new_tip1]</p>
+          <p>@[strings/new_tip2]</p>
+          <p>@[strings/new_tip3]</p>
+          <p>@[strings/new_tip4]</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-body">
+        <div class="kv"><dt>@[strings/new_current_class]</dt><dd>{class_name}</dd></div>
+        <div class="kv"><dt>@[strings/new_publish_identity]</dt><dd>{role}</dd></div>
+        <div class="kv"><dt>@[strings/new_data_scope]</dt><dd>@[strings/new_data_scope_value]</dd></div>
+      </div>
+    </div>
+  </aside>
+</div>
