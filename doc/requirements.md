@@ -147,5 +147,13 @@ return success/fail
 ./upload/<id>/:上传主页面（可看所有reply或写reply或删除该reply）
 ./:主页显示最近的征集与最近的上传以及user主页按钮
 /user:
-user主页，可更改偏好设置、新增班级（只有当在某个班级为admin时）、增加/删除auth等
+user主页，可更改偏好设置、新增班级（只有当在某个班级为admin时）、增加/删除auth等（v0.1.1:为某个auth改名）
 需要用户名/密码登录
+---
+v0.1.1新增：
+/api/rename-auth
+{
+    auth:str
+    name:str
+}
+返回：success/fail

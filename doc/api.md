@@ -421,7 +421,44 @@ curl -s http://localhost:3000/api/upload \
 
 ---
 
-## 9. `/api/del-object`
+## 9. `/api/rename-auth`（v0.1.1）
+
+修改当前 auth（班级身份）的显示名称。任何持有有效 auth 密钥的角色都可以改名。
+
+### 请求
+
+```json
+{
+  "auth": "SC-TEA-DEMO-2026",
+  "name": "林书言"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `auth` | string | ✅ | 要改名的 auth 密钥 |
+| `name` | string | ✅ | 新显示名称；去除首尾空白后 1–40 个字符，不能包含控制字符 |
+
+### 响应
+
+```json
+{
+  "ok": true,
+  "name": "林书言",
+  "msg": "身份名称已更新"
+}
+```
+
+失败时返回 `400`（名称为空 / 过长 / 含控制字符）或 `401`（密钥无效）。
+改名会同步刷新该 auth 在 `uploads`、`replies`、`submissions` 中的历史显示名称快照，因此已存在的提交/回复/征集也会立即显示新名称。
+
+```bash
+curl -s http://localhost:3000/api/rename-auth \
+  -H 'Content-Type: application/json' \
+  -d '{"auth":"SC-TEA-DEMO-2026","name":"林老师"}'
+```
+
+## 10. `/api/del-object`
 
 按对象 ID 删除（**管理员**）。这是原始需求中唯一没有 `auth` 字段的接口，因此也支持使用登录 cookie 鉴权。
 
@@ -461,7 +498,7 @@ curl -s http://localhost:3000/api/upload \
 
 ---
 
-## 10. `/api/health`
+## 11. `/api/health`
 
 公开健康检查（扩展接口）。
 
@@ -475,7 +512,7 @@ curl http://localhost:3000/api/health
 
 ---
 
-## 11. curl 全流程示例
+## 12. curl 全流程示例
 
 ```bash
 BASE=http://localhost:3000
@@ -515,6 +552,6 @@ curl -s $BASE/api/del-object \
 
 ---
 
-## 12. 页面使用的接口
+## 13. 页面使用的接口
 
 页面本身由服务端渲染，首页、提交、回复、上传、删除、账号中心等交互按需调用上述 API；账号中心的密码、偏好、身份绑定、创建班级使用同源表单 POST（`/user/*`），避免在浏览器中暴露密码到 JSON 请求。上传页在浏览器内使用 `FileReader` 将文件转换为 base64 后调用 `/api/upload`。

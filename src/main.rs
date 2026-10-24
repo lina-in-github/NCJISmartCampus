@@ -112,6 +112,7 @@ async fn main() {
         .route("/api/new-class", post(api::new_class))
         .route("/api/new-user", post(api::new_user))
         .route("/api/del-key", post(api::del_key))
+        .route("/api/rename-auth", post(api::rename_auth))
         .route("/api/del-object", post(api::del_object))
         .route("/api/health", get(api::health))
         .route("/static/app.css", get(static_css))
@@ -125,11 +126,11 @@ async fn main() {
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
-    let bind = std::env::var("SC_BIND").unwrap_or_else(|_| format!("0.0.0.0:{port}"));
+    let bind = std::env::var("SC_BIND").unwrap_or_else(|_| format!("[::]:{port}"));
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .expect("端口绑定失败");
-    let display = if let Some(rest) = bind.strip_prefix("0.0.0.0:") {
+    let display = if let Some(rest) = bind.strip_prefix("[::]:") {
         format!("localhost:{rest}")
     } else if let Some(rest) = bind.strip_prefix("[::]:") {
         format!("localhost:{rest}")

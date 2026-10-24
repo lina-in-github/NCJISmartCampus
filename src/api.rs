@@ -6,13 +6,13 @@ use serde_json::{json, Value};
 
 use crate::db;
 use crate::tools::{
-    api_bad, api_forbidden, api_not_found, api_ok, api_unauthorized, deadline_chip, fmt_iso,
-    invalidate_auth_sessions, normalize_data, normalize_page_role, now_ts, parse_deadline_value,
-    parse_match_mode, role_session, MatchMode,
+    api_bad, api_forbidden, api_not_found, api_ok, api_unauthorized, clean_display_name,
+    deadline_chip, fmt_iso, invalidate_auth_sessions, normalize_data, normalize_page_role, now_ts,
+    parse_deadline_value, parse_match_mode, role_session, MatchMode,
 };
 use crate::types::{
     AllSubmissionReq, AppState, AuthCtx, DelKeyReq, DelObjectReq, DownloadReq, NewClassReq,
-    NewSubmissionReq, NewUserReq, ReplyReq, SubmissionRow, UploadReq,
+    NewSubmissionReq, NewUserReq, RenameAuthReq, ReplyReq, SubmissionRow, UploadReq,
 };
 
 const MAX_TITLE: usize = 200;
@@ -638,6 +638,65 @@ pub async fn del_key(State(st): State<AppState>, Json(req): Json<DelKeyReq>) -> 
     }
     invalidate_auth_sessions(&st, &auth.id);
     api_ok(json!({ "ok": true, "msg": "密钥已删除" }))
+}
+
+// ---------------------------------------------------------------------------
+// /api/rename-auth
+// ---------------------------------------------------------------------------
+
+pub async fn rename_auth(State(st): State<AppState>, Json(req): Json<RenameAuthReq>) -> Response {
+    let auth = match require_auth(&st, &req.auth) {
+        Ok(a) => a,
+        Err(r) => return r,
+    };
+    let name = match clean_display_name(&req.name) {
+        Ok(n) => n,
+        Err(e) => return api_bad(e),
+    };
+
+    // 同步刷新历史快照，让改名立即反映在已有的提交、回复和征集上。
+    let mut db = st.db.lock().unwrap();
+    let tx = match db.transaction() {
+        Ok(t) => t,
+        Err(e) => {
+            return crate::tools::api_err(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("改名失败：{e}"),
+            )
+        }
+    };
+    let result = (|| -> rusqlite::Result<()> {
+        tx.execute(
+            "UPDATE auths SET display_name = ?1 WHERE id = ?2",
+            params![name, auth.id],
+        )?;
+        tx.execute(
+            "UPDATE uploads SET uploader_name = ?1 WHERE auth_id = ?2",
+            params![name, auth.id],
+        )?;
+        tx.execute(
+            "UPDATE replies SET replier_name = ?1 WHERE auth_id = ?2",
+            params![name, auth.id],
+        )?;
+        tx.execute(
+            "UPDATE submissions SET created_name = ?1 WHERE created_by = ?2",
+            params![name, auth.id],
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => match tx.commit() {
+            Ok(()) => api_ok(json!({ "ok": true, "name": name, "msg": "身份名称已更新" })),
+            Err(e) => crate::tools::api_err(
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("改名失败：{e}"),
+            ),
+        },
+        Err(e) => crate::tools::api_err(
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("改名失败：{e}"),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

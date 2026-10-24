@@ -1,6 +1,6 @@
 [package]
 name = "smart-campus"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "智慧校园 · 班级征集、提交与回复平台"
 

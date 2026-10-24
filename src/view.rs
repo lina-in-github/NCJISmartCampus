@@ -479,7 +479,7 @@ fn document_head(title: &str, theme: &str, with_app_css: bool) -> String {
         title = esc(title),
         theme_boot = THEME_BOOT,
         css = if with_app_css {
-            r#"<link rel="stylesheet" href="/static/app.css?v=2">"#
+            r#"<link rel="stylesheet" href="/static/app.css?v=3">"#
         } else {
             ""
         }
@@ -499,6 +499,21 @@ fn page_footer(scripts: &str, with_app: bool) -> String {
     </div>
   </form>
 </dialog>
+<dialog id="rename-dialog" class="dialog">
+  <form class="dialog-card" id="rename-form">
+    <h3 class="dialog-title">为身份改名</h3>
+    <p class="dialog-msg">新名称会显示在该班级的提交、回复与页面身份信息中。</p>
+    <div class="field">
+      <label class="label" for="rename-input">新名称</label>
+      <input class="input" id="rename-input" type="text" maxlength="40" autocomplete="off" required>
+      <span class="hint">1–40 个字符，改名会同步刷新该身份的历史显示名称。</span>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn outline" type="button" id="rename-cancel">取消</button>
+      <button class="btn primary" type="submit" id="rename-save">保存</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="lightbox" class="lightbox">
   <div class="lightbox-bar">
     <span data-lightbox-name>附件预览</span>
@@ -511,7 +526,7 @@ fn page_footer(scripts: &str, with_app: bool) -> String {
 </body>
 </html>"#,
         if with_app {
-            r#"<script src="/static/app.js?v=2"></script>"#
+            r#"<script src="/static/app.js?v=3"></script>"#
         } else {
             ""
         },
@@ -856,7 +871,7 @@ pub fn login_index(mode: &str, flash: &Flash) -> String {
     );
 
     let mut out = document_head("登录", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=2"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
     out
 }
 
@@ -987,7 +1002,7 @@ pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
     );
 
     let mut out = document_head(title, "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=2"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
     out
 }
 
@@ -2229,7 +2244,7 @@ pub fn user_guest(
         prefill_key = esc(prefill_key)
     );
     let mut out = document_head("账号中心", "system", true);
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=2"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/app.js?v=3"></script></body></html>"#));
     out
 }
 
@@ -2306,6 +2321,7 @@ pub fn user_account(
                     .rev()
                     .collect();
                 let masked = format!("{head}••••{tail}");
+                let auth_name = a.identity();
                 let student = if a.role == "student" {
                     format!(
                         r#"<span>{}</span>"#,
@@ -2324,11 +2340,13 @@ pub fn user_account(
       {current}
     </div>
     <div class="auth-row-sub">
+      <span class="auth-row-name">{auth_name}</span>
       {student}
       <span class="key" data-full="{full}" data-mask="{masked}">{masked}</span>
     </div>
   </div>
   <div class="key-actions">
+    <button class="btn ghost sm" type="button" data-rename="{full}" data-name="{auth_name}" title="为此身份改名" aria-label="为此身份改名">{pencil}改名</button>
     <button class="btn ghost sm" type="button" data-reveal>显示</button>
     <button class="btn ghost sm" type="button" data-copy="{full}" title="复制密钥">{copy}</button>
     <form class="enter-form" method="post" action="/user/enter">
@@ -2350,6 +2368,8 @@ pub fn user_account(
                         ""
                     },
                     student = student,
+                    auth_name = esc(&auth_name),
+                    pencil = icon("pencil"),
                     full = esc(&a.key),
                     masked = esc(&masked),
                     copy = icon("copy"),

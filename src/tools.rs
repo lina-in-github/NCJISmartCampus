@@ -114,6 +114,21 @@ pub fn js_json<T: Serialize>(v: &T) -> String {
         .replace('\u{2029}', "\\u2029")
 }
 
+/// 校验 auth 改名后的显示名称。
+pub fn clean_display_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err("name 不能为空".to_string());
+    }
+    if name.chars().count() > 40 {
+        return Err("name 过长（最多 40 个字符）".to_string());
+    }
+    if name.chars().any(char::is_control) {
+        return Err("name 不能包含控制字符".to_string());
+    }
+    Ok(name.to_string())
+}
+
 pub fn truncate_chars(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         return s.to_string();
@@ -1096,6 +1111,16 @@ mod tests {
         assert_eq!(arr[2]["mime"], "application/octet-stream");
         assert!(normalize_data(json!("not-array")).is_err());
         assert!(normalize_data(json!([{"data":"!!"}])).is_err());
+    }
+
+    #[test]
+    fn display_name_validation() {
+        assert_eq!(clean_display_name("  林老师  ").unwrap(), "林老师");
+        assert!(clean_display_name("").is_err());
+        assert!(clean_display_name("   ").is_err());
+        assert!(clean_display_name("a\nb").is_err());
+        assert!(clean_display_name(&"名".repeat(40)).is_ok());
+        assert!(clean_display_name(&"名".repeat(41)).is_err());
     }
 
     #[test]

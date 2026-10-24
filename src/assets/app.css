@@ -2684,6 +2684,11 @@ a.list-row:hover {
   font-weight: 700;
 }
 
+.auth-row-name {
+  color: var(--text);
+  font-weight: 650;
+}
+
 .auth-row-sub {
   display: flex;
   align-items: center;
@@ -2711,8 +2716,10 @@ a.list-row:hover {
 .key-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   flex: none;
+  flex-wrap: wrap;
 }
 
 .key-actions .btn {
@@ -2892,6 +2899,10 @@ a.list-row:hover {
   color: var(--text-2);
   font-size: 13px;
   line-height: 1.65;
+}
+
+.dialog-card .field {
+  margin-top: 14px;
 }
 
 .dialog-actions {

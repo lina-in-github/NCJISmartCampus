@@ -313,6 +313,75 @@
   });
 
   // ---------------------------------------------------------------------
+  // /user 身份改名
+  // ---------------------------------------------------------------------
+
+  var renameDialog = $("#rename-dialog");
+  var renameInput = $("#rename-input");
+  var renameForm = $("#rename-form");
+  var renameKey = "";
+
+  if (renameDialog) {
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-rename]");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      renameKey = btn.getAttribute("data-rename") || "";
+      if (!renameKey || !renameInput) return;
+      renameInput.value = btn.getAttribute("data-name") || "";
+      renameDialog.showModal();
+      setTimeout(function () {
+        renameInput.focus();
+        renameInput.select();
+      }, 30);
+    });
+
+    renameDialog.addEventListener("click", function (e) {
+      if (e.target === renameDialog) renameDialog.close();
+    });
+
+    renameDialog.addEventListener("close", function () {
+      renameKey = "";
+    });
+
+    var renameCancel = $("#rename-cancel");
+    if (renameCancel) {
+      renameCancel.addEventListener("click", function () {
+        renameDialog.close();
+      });
+    }
+  }
+
+  if (renameForm) {
+    renameForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var save = $("#rename-save");
+      var name = (renameInput.value || "").trim();
+      if (!name) {
+        toast("请输入新名称", "error");
+        renameInput.focus();
+        return;
+      }
+      if (!renameKey) {
+        toast("缺少身份信息，请刷新页面重试", "error");
+        return;
+      }
+      setLoading(save, true, "保存中…");
+      try {
+        await api("/api/rename-auth", { auth: renameKey, name: name });
+        toast("身份名称已更新", "ok");
+        setTimeout(function () {
+          location.href = "/user?ok=" + encodeURIComponent("身份名称已更新");
+        }, 350);
+      } catch (err) {
+        setLoading(save, false);
+        toast(err.message, "error");
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // 登录页：演示密钥快速填充
   // ---------------------------------------------------------------------
 

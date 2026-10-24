@@ -128,6 +128,25 @@ assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE
 curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的身份" || fail "登录页缺少身份选择"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
+echo "==> 身份改名 /api/rename-auth"
+NEW_TEACHER_NAME="林书言（改）"
+NEW_STUDENT_NAME="陈小满（改）"
+
+RENAME_T="$(post /api/rename-auth "{\"auth\":\"$TEACHER\",\"name\":\"$NEW_TEACHER_NAME\"}")"
+assert_jq "$RENAME_T" ".ok == true and .name == \"$NEW_TEACHER_NAME\"" "rename-auth 老师"
+ALL_RENAMED="$(post /api/all-submission "{\"auth\":\"$TEACHER\",\"match_mode\":\"All\"}")"
+assert_jq "$ALL_RENAMED" ".datas[] | select(.id == \"$SUB\") | .createdBy == \"$NEW_TEACHER_NAME\"" "改名同步征集发布者"
+curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "$NEW_TEACHER_NAME" || fail "老师空间未显示新名称"
+curl -sS -b "$TMP/tea-cookie" "$BASE/user" | grep -q 'data-rename=' || fail "账号中心缺少改名入口"
+curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/upload/$UP/" | grep -q "$NEW_TEACHER_NAME" || fail "改名未同步历史回复人"
+
+RENAME_S="$(post /api/rename-auth "{\"auth\":\"$STUDENT\",\"name\":\"$NEW_STUDENT_NAME\"}")"
+assert_jq "$RENAME_S" ".ok == true and .name == \"$NEW_STUDENT_NAME\"" "rename-auth 学生"
+DL_RENAMED="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")"
+assert_jq "$DL_RENAMED" ".datas[0].uploader == \"$NEW_STUDENT_NAME\"" "改名同步历史提交人"
+assert_eq "$(http_code /api/rename-auth "{\"auth\":\"$TEACHER\",\"name\":\"   \"}")" "400" "改名空名称"
+assert_eq "$(http_code /api/rename-auth '{"auth":"SC-INVALID","name":"x"}')" "401" "改名无效密钥"
+
 echo "==> 学生视角（API）"
 ALL="$(post /api/all-submission "{\"auth\":\"$STUDENT\",\"match_mode\":\"All\"}")"
 assert_jq "$ALL" ".datas[] | select(.id == \"$SUB\") | .myUploadCount == 1 and .uploadCount == 1" "all-submission 学生视角"

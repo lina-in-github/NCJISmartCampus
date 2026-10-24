@@ -267,6 +267,13 @@ pub struct DelKeyReq {
 }
 
 #[derive(Deserialize)]
+pub struct RenameAuthReq {
+    pub auth: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Deserialize)]
 pub struct DelObjectReq {
     /// 官方接口只要求 id；auth 可选（缺省时回退到登录 cookie）。
     #[serde(default)]
