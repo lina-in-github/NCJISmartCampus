@@ -211,6 +211,7 @@ body {
 .chip.ok, .chip.soft { background: var(--accent-soft); color: var(--accent-text); }
 .chip.warn { background: var(--warning); color: #2b2600; }
 .chip.danger { background: var(--danger-soft); color: var(--danger); }
+.chip.pinned { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .role-badge {
   display: inline-flex; align-items: center; padding: 1px 7px; border: 1px solid var(--line);
   border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 11px;
@@ -870,4 +871,22 @@ body {
 
 @media (max-width: 380px) {
   .attachment-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 公示版：仅详情，不开放作业提交 */
+.notice-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.notice-note svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent-text);
 }

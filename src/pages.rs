@@ -522,6 +522,10 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
+            if sub.is_notice() {
+                drop(db);
+                return redirect(&format!("{base}submission/{}/all", sub.id));
+            }
             let next = db::latest_upload_id(&db, &auth, &sub.id);
             drop(db);
             let target = match next {
@@ -545,17 +549,25 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
-            let rows = if auth.is_staff() {
-                db::list_uploads(&db, &auth, None, 500, false)
-                    .into_iter()
-                    .filter(|u| u.submission_id == sub.id)
-                    .collect::<Vec<_>>()
-            } else {
-                db::list_uploads(&db, &auth, None, 500, false)
-                    .into_iter()
-                    .filter(|u| u.submission_id == sub.id)
-                    .collect::<Vec<_>>()
-            };
+            if sub.is_notice() {
+                let admin = auth.is_admin();
+                drop(db);
+                let ctx = page_context(
+                    &st,
+                    &headers,
+                    &session,
+                    &auth,
+                    &prefs,
+                    &t("page_notice_detail"),
+                    "submissions",
+                    flash,
+                );
+                return html(view::notice_detail(&ctx, &sub, admin));
+            }
+            let rows = db::list_uploads(&db, &auth, None, 500, false)
+                .into_iter()
+                .filter(|u| u.submission_id == sub.id)
+                .collect::<Vec<_>>();
             let staff = auth.is_staff();
             let admin = auth.is_admin();
             drop(db);
@@ -586,6 +598,10 @@ async fn render_home_route(
                 );
                 return not_found_in(&ctx, &t("error_submission_missing"));
             };
+            if sub.is_notice() {
+                drop(db);
+                return redirect(&format!("{base}submission/{}/all", sub.id));
+            }
             let (count, last) = db::own_upload_info(&db, &auth, &sub.id);
             drop(db);
             let ctx = page_context(

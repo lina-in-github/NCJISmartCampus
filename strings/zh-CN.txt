@@ -83,6 +83,7 @@ name=page_publish lines=0 content=发布
 name=page_uploads lines=0 content=提交
 name=page_upload lines=0 content=上传作品
 name=page_submission_detail lines=0 content=征集详情
+name=page_notice_detail lines=0 content=公示详情
 name=page_upload_detail lines=0 content=提交详情
 name=login_hero_eyebrow lines=0 content=SMART CAMPUS
 name=login_hero_login_title lines=0 content=面向班级的简单管理工具
@@ -229,6 +230,9 @@ name=submission_all_hint_staff lines=0 content=点击任意提交查看附件并
 name=submission_all_hint_parent lines=0 content=仅显示孩子自己的提交
 name=submission_all_hint_self lines=0 content=仅显示你自己的提交
 name=submission_all_no_desc lines=0 content=暂无说明
+name=submission_notice_detail lines=0 content=公示详情
+name=submission_notice_pinned lines=0 content=公示置顶
+name=submission_notice_no_upload lines=0 content=此内容为公示版，仅展示详情，不开放作业提交。
 name=upload_back_list lines=0 content=返回提交列表
 name=upload_back_submission lines=0 content=返回征集详情
 name=upload_back_all lines=0 content=返回「{}」全部提交

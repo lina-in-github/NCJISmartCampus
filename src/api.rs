@@ -57,8 +57,12 @@ pub async fn upload(State(st): State<AppState>, Json(req): Json<UploadReq>) -> R
     };
 
     let db = st.db.lock().unwrap();
-    match db::submission_class_id(&db, &req.which) {
-        Some(c) if c == auth.class_id => {}
+    match db::submission_class_and_kind(&db, &req.which) {
+        Some((class_id, kind)) if class_id == auth.class_id => {
+            if kind.trim().eq_ignore_ascii_case("notice") {
+                return api_forbidden("uploads are disabled for notice submissions");
+            }
+        }
         Some(_) => return api_not_found("submission does not belong to the current class"),
         None => return api_not_found("submission not found"),
     }

@@ -91,7 +91,7 @@ Content-Type: application/json
 
 ## 1. `/api/upload`
 
-上传一份提交到指定征集（任意角色）。
+上传一份提交到指定征集（任意角色）。类型为 `notice` 的公示版禁用提交，会返回 `403`。
 
 ### 请求
 
@@ -286,6 +286,7 @@ curl -s http://localhost:3000/api/upload \
 - 老师/管理员视角：`uploadCount` 为全班提交数，`pendingCount` 为全班待回复数。
 - `deadLine` 可能为 `null`。
 - 时间状态由页面根据 `deadLine` 计算，API 不再返回展示文案。
+- 截至截止时间的 `notice` 公示版会排在普通征集之前；未设置截止时间的公示版同样置顶。
 
 ---
 

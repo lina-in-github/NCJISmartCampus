@@ -394,6 +394,17 @@ pub fn submission_class_id(db: &Connection, id: &str) -> Option<String> {
     .flatten()
 }
 
+pub fn submission_class_and_kind(db: &Connection, id: &str) -> Option<(String, String)> {
+    db.query_row(
+        "SELECT class_id, type FROM submissions WHERE id = ?1",
+        params![id],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
 pub fn upload_class_id(db: &Connection, id: &str) -> Option<String> {
     db.query_row(
         "SELECT class_id FROM uploads WHERE id = ?1",
@@ -473,7 +484,7 @@ fn submission_sql(staff: bool, with_limit: bool) -> String {
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id
                     ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
              FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+             ORDER BY CASE WHEN LOWER(TRIM(s.type)) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
     } else {
         format!(
@@ -485,7 +496,7 @@ fn submission_sql(staff: bool, with_limit: bool) -> String {
                 (SELECT u.id FROM uploads u WHERE u.submission_id = s.id AND u.auth_id = ?2
                     ORDER BY u.created_at DESC, u.id DESC LIMIT 1)
              FROM submissions s WHERE s.class_id = ?1
-             ORDER BY CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
+             ORDER BY CASE WHEN LOWER(TRIM(s.type)) = 'notice' AND (s.deadline IS NULL OR s.deadline > CAST(strftime('%s','now') AS INTEGER)) THEN 0 ELSE 1 END, CASE WHEN s.deadline IS NOT NULL AND s.deadline < CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END, CASE WHEN s.deadline IS NULL THEN 1 ELSE 0 END, s.deadline ASC, s.created_at DESC{tail}"
         )
     }
 }
@@ -1746,7 +1757,7 @@ fn demo_photo_svg(title: &str, subtitle: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::{hash_password, parse_time};
+    use crate::tools::{hash_password, now_ts, parse_time};
 
     fn temp_db() -> String {
         let path = format!("/tmp/smart-campus-test-{}.db", rand_string(8));
@@ -1804,5 +1815,35 @@ mod tests {
     fn time_helpers_smoke() {
         let t = parse_time("2026-11-01T20:00").unwrap();
         assert_eq!(crate::tools::fmt_datetime(t), "2026-11-01 20:00");
+    }
+
+    #[test]
+    fn notice_pinned_until_deadline() {
+        let path = temp_db();
+        {
+            let conn = open(&path).unwrap();
+            let teacher = load_auth_by_key(&conn, DEMO_TEACHER_KEY).unwrap();
+            let now = now_ts();
+            let regular =
+                insert_submission(&conn, &teacher, "普通征集", "", "homework", Some(now + 86_400))
+                    .unwrap();
+            let notice =
+                insert_submission(&conn, &teacher, "公示通知", "", "notice", Some(now + 172_800))
+                    .unwrap();
+            let expired =
+                insert_submission(&conn, &teacher, "过期公示", "", "notice", Some(now - 86_400))
+                    .unwrap();
+
+            let rows = list_submissions(&conn, &teacher, 500);
+            assert_eq!(rows[0].id, notice);
+            assert!(rows[0].is_pinned_notice(now));
+            assert!(rows.iter().any(|row| row.id == regular));
+            assert!(!rows
+                .iter()
+                .find(|row| row.id == expired)
+                .unwrap()
+                .is_pinned_notice(now));
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }

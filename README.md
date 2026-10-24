@@ -76,9 +76,9 @@ SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 | `…/submissions/` | 所有征集；老师/管理员可发布 |
 | `…/submissions/new` | 发布征集（老师/管理员） |
 | `…/uploads/` | 学生：自己的提交；老师/管理员：全班提交，可筛选待回复/已回复 |
-| `…/submission/<id>/` | 有提交则跳转最后一条本站提交，否则跳上传表单 |
-| `…/submission/<id>/upload` | 上传表单（支持多附件、拖拽、预览） |
-| `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班） |
+| `…/submission/<id>/` | 有提交则跳转最后一条本站提交，否则跳上传表单；公示版（notice）跳转详情页 |
+| `…/submission/<id>/upload` | 上传表单（支持多附件、拖拽、预览）；公示版禁用并跳转详情页 |
+| `…/submission/<id>/all` | 该征集下的提交（学生仅自己，老师/管理员全班）；公示版仅渲染详情 |
 | `…/upload/<id>/` | 提交详情：附件预览、回复列表、重新上传、管理员删除 |
 | `/user` | 账号中心：偏好设置、密码、绑定/删除身份、创建班级、生成成员密钥；未登录 → `/login/account` |
 | `/logout` | POST，退出登录 |
@@ -99,7 +99,7 @@ SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 
 | 接口 | 权限 | 说明 |
 | --- | --- | --- |
-| `/api/upload` | 任意身份 | 上传提交（标题、说明、base64 附件） |
+| `/api/upload` | 任意身份 | 上传提交（标题、说明、base64 附件）；公示版（notice）返回 403 |
 | `/api/download` | 老师 / 管理员 | 按条件下载/查看某征集的提交与回复 |
 | `/api/new-submission` | 老师 / 管理员 | 发布征集 |
 | `/api/all-submission` | 任意身份 | 学生：本人视角；老师/管理员：全班视角 |
@@ -130,7 +130,7 @@ users  1 ─── n  auths  n ─── 1  classes
 - `users`：用户名、密码、显示名称、偏好设置。
 - `classes`：班级名称、简介、班级代码。
 - `auths`：班级密钥（`key`）、所属班级、绑定用户、角色（student / teacher / admin）、学生学号与短学号、**显示名称**（可通过 `/api/rename-auth` 修改）。
-- `submissions`：班级征集，含类型、说明、截止时间。
+- `submissions`：班级征集，含类型、说明、截止时间。类型为 `notice` 的公示版仅展示详情、不开放提交；未到截止时间的公示版会置顶。
 - `uploads`：提交，含附件 JSON、提交人身份快照（姓名、学号、角色）。
 - `replies`：老师/管理员回复，按时间排序。
 - 删除班级会级联删除该班级的 auth、征集、提交与回复；删除 auth 不会删除历史提交（保留提交人快照）。删除征集/提交会级联删除其下提交/回复。

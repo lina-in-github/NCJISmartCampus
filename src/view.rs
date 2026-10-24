@@ -241,6 +241,18 @@ fn deadline_badge(deadline: Option<i64>, now: i64) -> String {
     )
 }
 
+fn notice_pin_badge(row: &SubmissionRow, now: i64) -> String {
+    if row.is_pinned_notice(now) {
+        format!(
+            r#"<span class="chip pinned">{}{}</span>"#,
+            icon("megaphone"),
+            esc(&crate::strings::t("submission_notice_pinned"))
+        )
+    } else {
+        String::new()
+    }
+}
+
 fn upload_status(upload: &UploadRow) -> String {
     if upload.reply_count > 0 {
         format!(
@@ -1050,7 +1062,9 @@ fn submission_card_link(
     parent: bool,
 ) -> String {
     let href = format!("{base}submission/{}/", row.id);
-    let count_label = if staff {
+    let count_label = if row.is_notice() {
+        crate::strings::t("submission_notice_detail")
+    } else if staff {
         crate::strings::f1("submissions_count_staff", row.upload_count)
     } else if row.my_upload_count == 0 {
         if parent {
@@ -1073,6 +1087,7 @@ fn submission_card_link(
   <a class="card-link" href="{href}" aria-label="@[strings/common_open]@[strings/type_generic] {name}"></a>
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
+    {pin}
     {deadline}
   </div>
   <h3 class="submission-title">{name}</h3>
@@ -1085,6 +1100,7 @@ fn submission_card_link(
         href = esc(&href),
         name = esc(&row.name),
         type_label = esc(&type_label(&row.kind)),
+        pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
         desc = desc,
         file_icon = icon("file"),
@@ -1103,7 +1119,9 @@ fn submission_card_manage(
     parent: bool,
 ) -> String {
     let href = format!("{base}submission/{}/", row.id);
-    let count_label = if staff {
+    let count_label = if row.is_notice() {
+        crate::strings::t("submission_notice_detail")
+    } else if staff {
         crate::strings::f1("submissions_count_staff", row.upload_count)
     } else if row.my_upload_count == 0 {
         if parent {
@@ -1144,6 +1162,7 @@ fn submission_card_manage(
         r#"<article class="card submission-card">
   <div class="submission-top">
     <span class="chip type">{type_label}</span>
+    {pin}
     {deadline}
   </div>
   <h3 class="submission-title"><a href="{href}">{name}</a></h3>
@@ -1159,6 +1178,7 @@ fn submission_card_manage(
   </div>
 </article>"#,
         type_label = esc(&type_label(&row.kind)),
+        pin = notice_pin_badge(row, now),
         deadline = deadline_badge(row.deadline, now),
         href = esc(&href),
         name = esc(&row.name),
@@ -1169,7 +1189,9 @@ fn submission_card_manage(
         created = esc(&relative_time(row.created_at, now)),
         pending = pending,
         arrow = icon("arrow-right"),
-        action_label = if staff {
+        action_label = if row.is_notice() {
+            "@[strings/common_view]"
+        } else if staff {
             "@[strings/common_open]"
         } else if row.my_upload_count == 0 {
             "@[strings/common_go_submit]"
@@ -1667,6 +1689,51 @@ pub fn submission_all(
             "@[strings/submission_all_hint_self]"
         },
         list = list
+    );
+    layout(ctx, &body)
+}
+
+pub fn notice_detail(ctx: &LayoutCtx, sub: &SubmissionRow, admin: bool) -> String {
+    let now = crate::tools::now_ts();
+    let base = ctx.base();
+    let delete = if admin {
+        format!(
+            r#"<button class="btn danger" type="button" data-del="{id}" data-name="{name}" data-redirect="{base}submissions/">{trash}@[strings/submission_all_delete]</button>"#,
+            id = esc(&sub.id),
+            name = esc(&sub.name),
+            base = base,
+            trash = icon("trash")
+        )
+    } else {
+        String::new()
+    };
+    let body = format!(
+        include_str!("./views/notice_detail.html"),
+        base = base,
+        arrow = icon("arrow-left"),
+        name = esc(&sub.name),
+        created_name = esc(&sub.created_name),
+        created = esc(&fmt_datetime(sub.created_at)),
+        type_label = esc(&type_label(&sub.kind)),
+        pinned = if sub.is_pinned_notice(now) {
+            format!(
+                r#"<span class="chip pinned">{}{}</span>"#,
+                icon("megaphone"),
+                esc(&crate::strings::t("submission_notice_pinned"))
+            )
+        } else {
+            String::new()
+        },
+        deadline = deadline_badge(sub.deadline, now),
+        desc = if sub.desc.trim().is_empty() {
+            "@[strings/submission_all_no_desc]".to_string()
+        } else {
+            esc(&sub.desc)
+        },
+        clock_icon = icon("clock"),
+        published = crate::strings::f1("submission_all_published", fmt_datetime(sub.created_at)),
+        megaphone = icon("megaphone"),
+        delete = delete
     );
     layout(ctx, &body)
 }

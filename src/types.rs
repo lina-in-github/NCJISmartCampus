@@ -166,6 +166,18 @@ pub struct SubmissionRow {
     pub last_upload_id: Option<String>,
 }
 
+impl SubmissionRow {
+    /// 公示版（notice）只展示详情，不开放作业提交。
+    pub fn is_notice(&self) -> bool {
+        self.kind.trim().eq_ignore_ascii_case("notice")
+    }
+
+    /// 公示版在截止时间前置顶；未设置截止时间的公示长期有效。
+    pub fn is_pinned_notice(&self, now: i64) -> bool {
+        self.is_notice() && self.deadline.map_or(true, |deadline| deadline > now)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct UploadRow {
     pub id: String,
