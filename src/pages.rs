@@ -213,8 +213,21 @@ fn guard_home(
         "admin" => auth.role == "admin",
         _ => false,
     };
-    if !allowed || session.page_role != req_role {
+    if !allowed {
         return Err(redirect(&format!("/home/{mode}/{}/", session.page_role)));
+    }
+    if session.page_role != req_role {
+        // 学生身份可以在「学生视角 / 家长视角」之间切换：这只是前台展示的区分，
+        // 数据范围仍由同一个 auth 决定，API 完全不变。
+        let switchable = auth.role == "student"
+            && matches!(req_role, "parent" | "student")
+            && matches!(session.page_role.as_str(), "parent" | "student");
+        if !switchable {
+            return Err(redirect(&format!("/home/{mode}/{}/", session.page_role)));
+        }
+        crate::tools::update_session_page_role(st, headers, req_role);
+        crate::tools::remember_view(st, headers, req_role);
+        session.page_role = req_role.to_string();
     }
     session.mode = mode.to_string();
     Ok((session, auth, mode.to_string()))
@@ -255,14 +268,7 @@ pub async fn root(State(st): State<AppState>, headers: HeaderMap) -> Response {
 }
 
 pub async fn login_index(headers: HeaderMap, Query(q): Q) -> Response {
-    // 已登录时仍展示身份选择页，便于通过另一个班级密钥切换 auth。
-    // `/` 会把已登录用户送回 /home；这里刻意不做重定向。
-    let mode = q
-        .get("mode")
-        .and_then(|m| normalize_mode(m))
-        .map(str::to_string)
-        .unwrap_or_else(|| detect_mode(&headers));
-    html(view::login_index(&mode, &flash_from(&q)))
+    redirect("/login/account")
 }
 
 pub async fn login_page(
@@ -334,6 +340,10 @@ pub async fn login_submit(
         );
     }
     clear_role_session(&st, &headers);
+    // 学生身份用「家长 / 学生」哪张卡片登录，就记住哪套文案（纯展示偏好）。
+    if auth.role == "student" {
+        crate::tools::remember_view(&st, &headers, req_role);
+    }
     let target = format!("/home/{mode}/{req_role}/", mode = mode, req_role = req_role);
     let cookies = vec![crate::tools::session_cookie(
         SID_COOKIE,
@@ -406,8 +416,8 @@ async fn render_home_route(
             let submissions = db::list_submissions(&db, &auth, 4);
             let (filter, title_key, hint_key) = match active_role.as_str() {
                 "teacher" => (Some("pending"), "home_recent_teacher", "home_pending_hint"),
-                "admin" => (None, "home_recent_admin", "home_admin_hint"),
-                "parent" => (None, "home_recent_parent", "home_parent_hint"),
+                //"admin" => (None, "home_recent_admin", "home_admin_hint"),
+                //"parent" => (None, "home_recent_parent", "home_parent_hint"),
                 _ => (None, "home_recent_self", "home_self_hint"),
             };
             let uploads_title = t(title_key);
@@ -893,14 +903,20 @@ pub async fn user_enter(
     }
     clear_role_session(&st, &headers);
     let mode = user.prefs.mode.as_str();
-    let token = create_role_session(&st, &auth, auth.page_role(), mode);
+    // 学生身份按个人主页里的「显示模式」进入；老师 / 管理员始终用自己的页面角色。
+    let page_role = if auth.role == "student" {
+        user.prefs.student_page_role()
+    } else {
+        auth.page_role()
+    };
+    let token = create_role_session(&st, &auth, page_role, mode);
     let session_cookie = crate::tools::session_cookie(SID_COOKIE, &token);
     let mut cookies = vec![session_cookie];
     if cookie_value(&headers, USID_COOKIE).is_none() {
         let usid = create_user_session(&st, user.id);
         cookies.push(crate::tools::session_cookie(USID_COOKIE, &usid));
     }
-    let target = format!("/home/{mode}/{}/", auth.page_role());
+    let target = format!("/home/{mode}/{page_role}/");
     with_cookies(&target, cookies)
 }
 
@@ -968,6 +984,7 @@ pub async fn user_prefs(
     let mut prefs = Prefs {
         theme: form.theme,
         mode: form.mode,
+        view: form.view,
     };
     prefs.sanitize();
     let res = {
@@ -975,7 +992,19 @@ pub async fn user_prefs(
         db::update_user_prefs(&db, user.id, &display, &prefs)
     };
     match res {
-        Ok(_) => msg_redirect("/user", "ok", &t("flash_prefs_saved")),
+        Ok(_) => {
+            // 学生身份正在班级空间时，立刻套用新的显示视角。
+            if let Some((_, auth)) = role_session(&st, &headers) {
+                if auth.role == "student" {
+                    crate::tools::update_session_page_role(
+                        &st,
+                        &headers,
+                        prefs.student_page_role(),
+                    );
+                }
+            }
+            msg_redirect("/user", "ok", &t("flash_prefs_saved"))
+        }
         Err(e) => {
             eprintln!("save prefs failed: {e}");
             msg_redirect("/user", "err", &t("flash_save_failed"))

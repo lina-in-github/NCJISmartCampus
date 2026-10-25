@@ -44,6 +44,10 @@ name=common_student_no_suffix lines=0 content= · {} 号
 name=common_mobile lines=0 content=手机版
 name=common_desktop lines=0 content=电脑版
 name=common_view_mode lines=0 content=视图模式
+name=common_view_student lines=0 content=学生视角
+name=common_view_parent lines=0 content=家长视角
+name=layout_switch_view_student lines=0 content=切换到学生视角（我的）
+name=layout_switch_view_parent lines=0 content=切换到家长视角（孩子的）
 name=common_or lines=0 content=或
 name=common_click_fill lines=0 content=点击填入
 name=common_key_only_visible lines=0 content=密钥只对你可见
@@ -158,9 +162,12 @@ name=home_recent_submissions lines=0 content=最近的征集
 name=home_recent_admin lines=0 content=最近的提交
 name=home_recent_teacher lines=0 content=最近的提交
 name=home_recent_student lines=0 content=最近的提交
+name=home_recent_self lines=0 content=最近的提交
+name=home_recent_parent lines=0 content=最近的提交
 name=home_empty_submissions_title lines=0 content=还没有征集
 name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧！
 name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
+name=home_self_hint lines=0 content=还没有需要关注的提交
 name=stat_members lines=0 content=班级成员
 name=stat_active_submissions lines=0 content=进行中征集
 name=stat_pending lines=0 content=待回复提交
@@ -331,6 +338,8 @@ name=account_default_view lines=0 content=默认视图
 name=account_theme_system lines=0 content=跟随系统
 name=account_theme_light lines=0 content=浅色
 name=account_theme_dark lines=0 content=深色
+name=account_view_mode lines=0 content=显示模式（学生身份）
+name=account_view_mode_hint lines=0 content=学生身份可在「学生视角（我）」与「家长视角（孩子）」之间切换，只影响界面文案；数据范围仍由班级密钥决定，API 不变。
 name=account_save_prefs lines=0 content=保存偏好
 name=account_security lines=0 content=登录与安全
 name=account_current_password lines=0 content=当前密码

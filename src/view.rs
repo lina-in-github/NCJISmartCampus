@@ -648,6 +648,32 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         )
     };
 
+    // 学生身份：顶栏提供「学生视角 / 家长视角」切换（只改前台文案，同一个 auth、同一套 API）。
+    let view_switch = if ctx.role == "student" && !ctx.is_account {
+        let (target, label, title_key) = if ctx.page_role == "parent" {
+            (
+                "student",
+                "@[strings/common_view_student]",
+                "@[strings/layout_switch_view_student]",
+            )
+        } else {
+            (
+                "parent",
+                "@[strings/common_view_parent]",
+                "@[strings/layout_switch_view_parent]",
+            )
+        };
+        format!(
+            r#"<a class="btn outline sm" href="/home/{mode}/{target}/" title="{title}">{label}</a>"#,
+            mode = esc(&ctx.mode),
+            target = target,
+            title = title_key,
+            label = label
+        )
+    } else {
+        String::new()
+    };
+
     let user_role_label = ctx.user_label();
     let sc = js_json(&json!({
         "auth": ctx.auth_key,
@@ -694,6 +720,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         <h1>{title}</h1>
       </div>
       <div class="topbar-actions">
+        {view_switch}
         <span class="role-chip"><span class="dot"></span>{role}</span>
         <a class="icon-btn" href="/user" title="@[strings/role_account]" aria-label="@[strings/role_account]">{user_icon}</a>
         <button class="icon-btn" id="theme-toggle" type="button" title="@[strings/common_theme_toggle]" aria-label="@[strings/common_theme_toggle]">
@@ -728,6 +755,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
         logout = icon("logout"),
         class_name = esc(&ctx.class_name),
         title = esc(&ctx.title),
+        view_switch = view_switch,
         user_icon = icon("user"),
         moon = icon("moon"),
         sun = icon("sun"),
@@ -2298,8 +2326,6 @@ pub fn user_guest(
         include_str!("./views/user_guest.html"),
         hero = auth_hero("account"),
         mobile_brand = auth_brand(true),
-        arrow = icon("arrow-left"),
-        mode_switch = account_mode_switch(mode),
         flash = flash_html(flash),
         note = note,
         lock = icon("lock"),
@@ -2355,8 +2381,27 @@ pub fn user_account(
             })
             .collect::<String>()
     };
+    let view_options = |selected: &str| {
+        ["student", "parent"]
+            .iter()
+            .map(|v| {
+                let label = if *v == "student" {
+                    "@[strings/common_view_student]"
+                } else {
+                    "@[strings/common_view_parent]"
+                };
+                format!(
+                    r#"<option value="{v}"{sel}>{label}</option>"#,
+                    v = v,
+                    sel = if selected == *v { " selected" } else { "" },
+                    label = label
+                )
+            })
+            .collect::<String>()
+    };
     let theme_sel = role_options(&user.prefs.theme);
     let mode_sel = mode_options(&user.prefs.mode);
+    let view_sel = view_options(user.prefs.student_page_role());
     let display = if user.display_name.trim().is_empty() {
         user.username.clone()
     } else {
@@ -2482,6 +2527,7 @@ pub fn user_account(
         n_auths = auths.len(),
         mode_sel=mode_sel,
         theme_sel=theme_sel,
+        view_sel=view_sel,
         n_classes = classes.len(),
         n_admin = admin_auths.len(),
         settings = icon("settings"),

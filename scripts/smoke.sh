@@ -255,6 +255,43 @@ curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/submission/$SHEET/all" | gr
   || fail "答题卡提交列表未显示得分"
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SHEET\"}")" '.ok == true' "删除答题卡征集"
 
+echo "==> 学生 / 家长视角（前台区分，API 不变）"
+# 同一个学生密钥：用「家长」卡片登录即家长视角，文案区分「孩子」
+curl -sS -c "$TMP/par-cookie" -o /dev/null -X POST -d "key=$STUDENT" "$BASE/login/mob/parent"
+PARENT_HOME="$(curl -sS -b "$TMP/par-cookie" "$BASE/home/mob/parent/")"
+grep -q "孩子提交" <<<"$PARENT_HOME" || fail "家长视角首页缺少家长文案"
+grep -q '切换到学生视角' <<<"$PARENT_HOME" || fail "家长视角缺少切换入口"
+if grep -q '@\[strings/' <<<"$PARENT_HOME"; then fail "家长视角首页存在未替换的字符串标签"; fi
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/par-cookie" "$BASE/home/mob/student/")" "200" "家长视角可切到学生视角"
+STUDENT_VIEW="$(curl -sS -b "$TMP/par-cookie" "$BASE/home/mob/student/")"
+grep -q "我的上传" <<<"$STUDENT_VIEW" || fail "学生视角首页缺少学生文案"
+if grep -q "孩子提交" <<<"$STUDENT_VIEW"; then fail "学生视角仍显示家长文案"; fi
+# 老师身份不能进入家长视角（视角只对学生身份开放）
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$BASE/home/mob/parent/")" \
+  "$BASE/home/mob/teacher/" "老师不能切到家长视角"
+
+# 个人主页（账号中心）配置显示模式
+VIEW_COOKIE="$TMP/view-cookie"
+curl -sS -c "$VIEW_COOKIE" -o /dev/null -X POST -d 'username=student&password=student123' "$BASE/user/login"
+assert_eq "$(curl -sS -b "$VIEW_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
+  --data-urlencode 'display_name=Smoke' --data-urlencode 'theme=system' --data-urlencode 'mode=mob' \
+  --data-urlencode 'view=parent' "$BASE/user/prefs")" "303" "保存显示模式"
+curl -sS -b "$VIEW_COOKIE" "$BASE/user" | grep -q 'id="pref-view"' || fail "账号中心缺少显示模式设置"
+curl -sS -b "$VIEW_COOKIE" "$BASE/user" | grep -q '<option value="parent" selected>' \
+  || fail "账号中心未回显家长视角"
+VIEW_AUTH="$(curl -sS -b "$VIEW_COOKIE" "$BASE/user" | grep -o 'name="auth_id" value="[^"]*"' | head -1 | cut -d'"' -f4)"
+[[ -n "$VIEW_AUTH" ]] || fail "未找到可进入的 auth"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$VIEW_COOKIE" -X POST -d "auth_id=$VIEW_AUTH" "$BASE/user/enter")" \
+  "$BASE/home/mob/parent/" "显示模式=家长时按家长视角进入"
+assert_eq "$(curl -sS -b "$VIEW_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
+  --data-urlencode 'display_name=Smoke' --data-urlencode 'theme=system' --data-urlencode 'mode=mob' \
+  --data-urlencode 'view=student' "$BASE/user/prefs")" "303" "切回学生视角"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$VIEW_COOKIE" -X POST -d "auth_id=$VIEW_AUTH" "$BASE/user/enter")" \
+  "$BASE/home/mob/student/" "显示模式=学生时按学生视角进入"
+# API 完全不感知学生 / 家长视角
+assert_jq "$(post /api/all-submission "{\"auth\":\"$STUDENT\"}")" '.ok == true' "视角只影响前台，API 不变"
+assert_eq "$(http_code /api/download "{\"auth\":\"$STUDENT\",\"which\":\"$SUB\",\"match_mode\":\"All\"}")" "403" "视角不影响 API 权限"
+
 echo "==> 账号入口与角色身份隔离"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/user")" "303" "未登录访问账号中心"
 assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' "$BASE/user")" "$BASE/login/account" "未登录账号中心跳转登录页"

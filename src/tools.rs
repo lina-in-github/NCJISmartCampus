@@ -933,6 +933,44 @@ pub fn user_prefs(st: &AppState, headers: &HeaderMap) -> Prefs {
         .unwrap_or_default()
 }
 
+/// 更新当前角色会话的页面角色（学生 / 家长视角互换）。返回是否命中会话。
+pub fn update_session_page_role(st: &AppState, headers: &HeaderMap, page_role: &str) -> bool {
+    let Some(token) = cookie_value(headers, SID_COOKIE) else {
+        return false;
+    };
+    let mut map = st.sessions.lock().unwrap();
+    match map.get_mut(&token) {
+        Some(session) => {
+            session.page_role = page_role.to_string();
+            true
+        }
+        None => false,
+    }
+}
+
+/// 记住「学生视角 / 家长视角」偏好：纯前端展示偏好，只影响页面文案。
+/// 未登录账号中心（没有 sc_uid）时静默跳过。
+pub fn remember_view(st: &AppState, headers: &HeaderMap, view: &str) {
+    let Some(user) = current_user(st, headers) else {
+        return;
+    };
+    let mut prefs = user.prefs.clone();
+    if prefs.view == view {
+        return;
+    }
+    prefs.view = view.to_string();
+    prefs.sanitize();
+    let display = if user.display_name.trim().is_empty() {
+        user.username.clone()
+    } else {
+        user.display_name.clone()
+    };
+    let db = st.db.lock().unwrap();
+    if let Err(e) = db::update_user_prefs(&db, user.id, &display, &prefs) {
+        eprintln!("remember view preference failed: {e}");
+    }
+}
+
 pub fn invalidate_auth_sessions(st: &AppState, auth_id: &str) {
     st.sessions
         .lock()

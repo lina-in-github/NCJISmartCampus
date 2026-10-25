@@ -106,6 +106,10 @@ pub struct Prefs {
     pub theme: String,
     #[serde(default = "default_mode")]
     pub mode: String,
+    /// 学生身份的展示视角：`student`（我）/ `parent`（孩子）。
+    /// 只是前台展示偏好：数据范围仍由班级密钥（auth）与角色决定，API 不受影响。
+    #[serde(default = "default_view")]
+    pub view: String,
 }
 
 fn default_theme() -> String {
@@ -114,12 +118,31 @@ fn default_theme() -> String {
 fn default_mode() -> String {
     "mob".to_string()
 }
+fn default_view() -> String {
+    VIEW_STUDENT.to_string()
+}
+
+/// 学生身份的前台展示视角。
+pub const VIEW_STUDENT: &str = "student";
+pub const VIEW_PARENT: &str = "parent";
+
+impl Prefs {
+    /// 学生身份进入班级空间时使用的页面角色（老师/管理员不受影响）。
+    pub fn student_page_role(&self) -> &'static str {
+        if self.view == VIEW_PARENT {
+            VIEW_PARENT
+        } else {
+            VIEW_STUDENT
+        }
+    }
+}
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             theme: default_theme(),
             mode: default_mode(),
+            view: default_view(),
         }
     }
 }
@@ -139,6 +162,10 @@ impl Prefs {
         self.mode = match self.mode.as_str() {
             "mob" | "pc" => self.mode.clone(),
             _ => "mob".to_string(),
+        };
+        self.view = match self.view.as_str() {
+            VIEW_STUDENT | VIEW_PARENT => self.view.clone(),
+            _ => VIEW_STUDENT.to_string(),
         };
     }
 
@@ -348,6 +375,8 @@ pub struct PrefsForm {
     pub theme: String,
     #[serde(default)]
     pub mode: String,
+    #[serde(default)]
+    pub view: String,
 }
 
 #[derive(Deserialize)]
@@ -384,10 +413,23 @@ mod tests {
         let mut p = Prefs {
             theme: "neon".into(),
             mode: "watch".into(),
+            view: "everyone".into(),
         };
         p.sanitize();
         assert_eq!(p.theme, "system");
         assert_eq!(p.mode, "mob");
+        assert_eq!(p.view, VIEW_STUDENT);
+        assert_eq!(p.student_page_role(), "student");
+
+        let mut parent = Prefs {
+            view: VIEW_PARENT.into(),
+            ..Prefs::default()
+        };
+        parent.sanitize();
+        assert_eq!(parent.student_page_role(), "parent");
+        // 老版本 prefs JSON 没有 view 字段时回退到学生视角
+        let legacy = Prefs::from_json("{\"theme\":\"dark\",\"mode\":\"pc\"}");
+        assert_eq!(legacy.view, VIEW_STUDENT);
     }
 
     fn init_test_strings() {
