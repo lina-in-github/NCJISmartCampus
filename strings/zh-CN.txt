@@ -138,6 +138,7 @@ name=login_error_wrong_address lines=0 content=登录地址不正确
 name=login_error_unknown_identity lines=0 content=未知的登录身份
 name=login_error_enter_key lines=0 content=请输入班级密钥
 name=login_error_invalid_key lines=0 content=密钥无效或已被删除，请检查后重试
+name=login_error_role_mismatch lines=0 content=该密钥属于「{}」，请使用「{}」身份登录
 name=home_eyebrow_student lines=0 content=STUDENT SPACE
 name=home_eyebrow_parent lines=0 content=PARENT SPACE
 name=home_eyebrow_teacher lines=0 content=TEACHER DESK
@@ -168,6 +169,9 @@ name=home_empty_submissions_title lines=0 content=还没有征集
 name=home_empty_submissions_desc lines=0 content=当前班级还没有发布任何征集，稍后再来看看吧！
 name=home_empty_uploads_title lines=0 content=暂时没有需要关注的提交
 name=home_self_hint lines=0 content=还没有需要关注的提交
+name=home_pending_hint lines=0 content=优先处理未回复的提交
+name=home_admin_hint lines=0 content=全部内容尽在掌握
+name=home_parent_hint lines=0 content=孩子的最近提交
 name=stat_members lines=0 content=班级成员
 name=stat_active_submissions lines=0 content=进行中征集
 name=stat_pending lines=0 content=待回复提交
@@ -469,3 +473,4 @@ name=identity_student lines=0 content=学生
 name=identity_student_id lines=0 content=学生 {}
 name=student_no_full lines=0 content={} · {} 号
 name=student_no_short lines=0 content={} 号
+

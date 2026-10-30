@@ -32,10 +32,39 @@ cargo run
 | `SC_STRINGS_DIR` | `strings` | UI 字符串目录，启动时读取其中的 `*.txt` |
 | `SC_STRINGS_DB` | `strings.db` | 字符串同步数据库 |
 | `SC_LANG` | `zh-CN` | 运行时选择的语言（对应 `strings/<lang>.txt`） |
+| `SC_TLS_CERT` | — | PEM 证书链路径；与 `SC_TLS_KEY` 同时设置时启用 HTTPS |
+| `SC_TLS_KEY` | — | PEM 私钥路径；与 `SC_TLS_CERT` 同时设置时启用 HTTPS |
 
 ```bash
 SC_DB=./campus.db SC_BIND=127.0.0.1:8080 cargo run
 ```
+
+### 启用 HTTPS（TLS）
+
+服务内置 Rustls 支持。使用受信任的证书（例如 Let's Encrypt 或公司 CA 签发的 PEM 证书链）启动：
+
+```bash
+SC_BIND=0.0.0.0:3443 \
+SC_TLS_CERT=/etc/ssl/campus/fullchain.pem \
+SC_TLS_KEY=/etc/ssl/campus/privkey.pem \
+cargo run
+# 打开 https://localhost:3443
+```
+
+本地开发可生成自签名证书（浏览器会提示不受信任，可手动信任该证书）：
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout certs/key.pem -out certs/cert.pem \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+
+SC_TLS_CERT=certs/cert.pem SC_TLS_KEY=certs/key.pem cargo run
+# 打开 https://localhost:3000
+```
+
+`SC_TLS_CERT` 和 `SC_TLS_KEY` 必须同时配置；都不配置时保持原来的 HTTP 模式。生产环境更推荐由 Nginx/Caddy 等反向代理终止 TLS 并转发到本服务的 HTTP 端口，同时确保私钥文件仅服务账号可读。证书路径相对于启动目录解析。
 
 ### 演示账号与密钥
 
@@ -395,7 +424,7 @@ cargo test          # 时间/编码/MatchMode/附件/改名校验/问卷解析�
 
 ## 8. 安全说明与已知限制
 
-- 密码使用加盐、多轮 SHA-256；班级密钥为随机大写串。生产环境建议接入 Argon2/bcrypt、登录限流、HTTPS 与 CSRF token。
+- 密码使用加盐、多轮 SHA-256；班级密钥为随机大写串。生产环境建议接入 Argon2/bcrypt、登录限流与 CSRF token，并通过内置 TLS（见第 1 节）或反向代理启用 HTTPS。
 - 会话保存在内存，重启失效；多实例部署需要共享会话存储。
 - 附件以 base64 存进 SQLite，单次上传限制约 18MB；大文件/高并发场景应使用对象存储与流式接口。
 - 没有分页；演示数据与班级规模下足够，数据量增大后应在 `/api/download`、提交列表与账号页增加游标分页。

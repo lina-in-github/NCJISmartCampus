@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -20,7 +21,7 @@ mod tools;
 mod types;
 mod view;
 
-const FAVICON: &str = include_str!("./assets/favicon.csv"); 
+const FAVICON: &str = include_str!("./assets/favicon.csv");
 
 async fn static_css() -> Response {
     (
@@ -149,20 +150,33 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
     let bind = std::env::var("SC_BIND").unwrap_or_else(|_| format!("[::]:{port}"));
-    let listener = tokio::net::TcpListener::bind(&bind)
-        .await
-        .expect("failed to bind listener");
-    let display = if let Some(rest) = bind.strip_prefix("0.0.0.0:") {
-        format!("localhost:{rest}")
-    } else if let Some(rest) = bind.strip_prefix("[::]:") {
-        format!("localhost:{rest}")
-    } else {
-        bind.clone()
+    let addr: SocketAddr = match bind.parse() {
+        Ok(addr) => addr,
+        Err(_) => tokio::net::lookup_host(&bind)
+            .await
+            .unwrap_or_else(|_| panic!("invalid SC_BIND address: {bind}"))
+            .next()
+            .unwrap_or_else(|| panic!("SC_BIND did not resolve to an address: {bind}")),
     };
+
+    let tls_cert = std::env::var("SC_TLS_CERT").ok().filter(|v| !v.is_empty());
+    let tls_key = std::env::var("SC_TLS_KEY").ok().filter(|v| !v.is_empty());
+    let tls = match (tls_cert, tls_key) {
+        (Some(cert), Some(key)) => Some((cert, key)),
+        (None, None) => None,
+        _ => panic!("SC_TLS_CERT and SC_TLS_KEY must be set together"),
+    };
+
+    let display = if addr.ip().is_unspecified() {
+        format!("localhost:{}", addr.port())
+    } else {
+        bind
+    };
+    let scheme = if tls.is_some() { "https" } else { "http" };
 
     let (string_count, string_lang) = strings::stats();
     println!("{} · Campus OS", strings::t("title"));
-    println!("  Address : http://{display}");
+    println!("  Address : {scheme}://{display}");
     println!("  Strings : {string_count} ({string_lang})");
     println!("  Database: {db_path}");
     println!(
@@ -172,5 +186,20 @@ async fn main() {
         db::DEMO_STUDENT_KEY
     );
     println!("            accounts admin/admin123 · teacher/teacher123 · student/student123");
-    axum::serve(listener, app).await.expect("server failed");
+
+    if let Some((cert, key)) = tls {
+        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+            .await
+            .expect("failed to load TLS certificate or key");
+        println!("  TLS     : {cert} / {key}");
+        axum_server::tls_rustls::bind_rustls(addr, config)
+            .serve(app.into_make_service())
+            .await
+            .expect("server failed");
+    } else {
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .expect("failed to bind listener");
+        axum::serve(listener, app).await.expect("server failed");
+    }
 }

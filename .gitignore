@@ -8,3 +8,6 @@
 /sc-test.db*
 /smartcampus.log
 /strings.db
+
+# Local TLS certificates / keys
+/certs/

@@ -6,6 +6,7 @@ description = "智慧校园 · 班级征集、提交与回复平台"
 
 [dependencies]
 axum = "0.8"
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
