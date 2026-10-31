@@ -341,12 +341,6 @@ pub struct DelObjectReq {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-pub struct LoginForm {
-    #[serde(default)]
-    pub key: String,
-}
-
-#[derive(Deserialize)]
 pub struct UserLoginForm {
     pub username: String,
     pub password: String,

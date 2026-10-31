@@ -4,7 +4,6 @@ use std::fmt::Write as _;
 use axum::response::IntoResponse;
 use serde_json::{json, Value};
 
-use crate::db;
 use crate::tools::{
     b64_binary_len, fmt_date, fmt_datetime, fmt_datetime_local, format_size, html_escape, js_json,
     parse_attachment, role_label, truncate_chars,
@@ -691,55 +690,7 @@ pub fn layout(ctx: &LayoutCtx, body: &str) -> String {
     let mut out = document_head(&ctx.title, &ctx.theme);
     let _ = write!(
         out,
-        r#"<body>
-<div class="app-shell">
-  <aside class="sidebar">
-    <a class="brand" href="{home}" aria-label="@[strings/layout_brand_home]">
-      <span class="brand-mark">{logo}</span>
-      <span class="brand-text"><strong>@[strings/title]</strong><small>@[strings/brand_tagline]</small></span>
-    </a>
-    {class_block}
-    <nav class="side-nav" aria-label="@[strings/layout_main_nav]">
-      <span class="side-nav-label">@[strings/layout_space_nav]</span>
-      {side_nav}
-    </nav>
-    <div class="side-foot">
-      <a class="side-user" href="/user">
-        <span class="avatar sm{avatar_class}">{initial}</span>
-        <span class="who"><strong>{display}</strong><span>{role}</span></span>
-      </a>
-      <form method="post" action="/logout" class="inline-form">
-        <button class="side-logout" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
-      </form>
-    </div>
-  </aside>
-  <div class="main">
-    <header class="topbar">
-      <div class="topbar-title">
-        <span class="eyebrow">{class_name} · {role}</span>
-        <h1>{title}</h1>
-      </div>
-      <div class="topbar-actions">
-        {view_switch}
-        <span class="role-chip"><span class="dot"></span>{role}</span>
-        <a class="icon-btn" href="/user" title="@[strings/role_account]" aria-label="@[strings/role_account]">{user_icon}</a>
-        <button class="icon-btn" id="theme-toggle" type="button" title="@[strings/common_theme_toggle]" aria-label="@[strings/common_theme_toggle]">
-          <span class="icon-moon">{moon}</span><span class="icon-sun">{sun}</span>
-        </button>
-        <form method="post" action="/logout" class="inline-form desktop-only">
-          <button class="icon-btn" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
-        </form>
-      </div>
-    </header>
-    <main class="content">
-      {flash}
-      {body}
-    </main>
-    <nav class="bottom-nav" aria-label="@[strings/layout_bottom_nav]">{bottom_nav}</nav>
-  </div>
-</div>
-<script>window.SC = {sc};</script>
-"#,
+        include_str!("./views/layout.html"),
         home = esc(&base),
         logo = icon("graduation"),
         class_block = class_block,
@@ -782,36 +733,6 @@ fn auth_brand(mobile: bool) -> String {
         logo = icon("graduation")
     )
 }
-
-fn mode_switch_links<F>(mode: &str, href: F) -> String
-where
-    F: Fn(&str) -> String,
-{
-    format!(
-        r#"<div class="mode-switch" role="group" aria-label="@[strings/common_view_mode]">
-  <a class="mode-pill{mob}" href="{mob_href}">{phone}@[strings/common_mobile]</a>
-  <a class="mode-pill{pc}" href="{pc_href}">{desktop}@[strings/common_desktop]</a>
-</div>"#,
-        mob = if mode == "mob" { " active" } else { "" },
-        pc = if mode == "pc" { " active" } else { "" },
-        mob_href = esc(&href("mob")),
-        pc_href = esc(&href("pc")),
-        phone = icon("phone"),
-        desktop = icon("desktop")
-    )
-}
-
-fn mode_switch(mode: &str, role: Option<&str>) -> String {
-    mode_switch_links(mode, |m| match role {
-        Some(r) => format!("/login/{m}/{r}"),
-        None => format!("/login?mode={m}"),
-    })
-}
-
-fn account_mode_switch(mode: &str) -> String {
-    mode_switch_links(mode, |m| format!("/login/account?mode={m}"))
-}
-
 fn auth_hero(kind: &str) -> String {
     let (title, desc, features) = match kind {
         "account" => (
@@ -861,227 +782,6 @@ fn auth_hero(kind: &str) -> String {
         features = feature_html
     )
 }
-
-#[allow(clippy::format_in_format_args)]
-pub fn login_index(mode: &str, flash: &Flash) -> String {
-    let mode = if mode == "pc" { "pc" } else { "mob" };
-    let role_card = |role: &str, title: &str, desc: &str, icon_name: &str, icon_class: &str| {
-        format!(
-            r#"<a class="role-card" href="{href}">
-  <span class="role-icon {icon_class}">{icon}</span>
-  <span class="role-copy"><span class="role-title">{title}</span><span class="role-desc">{desc}</span></span>
-  <span class="role-arrow">{arrow}</span>
-</a>"#,
-            href = format!("/login/{mode}/{role}"),
-            icon_class = icon_class,
-            icon = icon(icon_name),
-            title = esc(title),
-            desc = esc(desc),
-            arrow = icon("arrow-right")
-        )
-    };
-
-    let demo_keys = format!(
-        r#"<details class="demo-keys">
-  <summary>@[strings/login_demo_summary]</summary>
-  <div class="demo-key-list">
-    <div class="demo-key"><span>@[strings/login_demo_parent_student]</span><code>{stu}</code><button class="btn ghost sm" type="button" data-copy="{stu}">{copy}</button></div>
-    <div class="demo-key"><span>@[strings/role_teacher]</span><code>{tea}</code><button class="btn ghost sm" type="button" data-copy="{tea}">{copy}</button></div>
-    <div class="demo-key"><span>@[strings/role_admin]</span><code>{adm}</code><button class="btn ghost sm" type="button" data-copy="{adm}">{copy}</button></div>
-  </div>
-</details>"#,
-        stu = db::DEMO_STUDENT_KEY,
-        tea = db::DEMO_TEACHER_KEY,
-        adm = db::DEMO_ADMIN_KEY,
-        copy = icon("copy")
-    );
-
-    let body = format!(
-        r#"<div class="auth-shell">
-  {hero}
-  <section class="auth-panel">
-    <div class="auth-card">
-      {mobile_brand}
-      <div class="auth-topline">
-        <span class="eyebrow">@[strings/login_choose_identity]</span>
-        {mode_switch}
-      </div>
-      {flash}
-      <div class="auth-heading">
-        <h2>@[strings/login_welcome]</h2>
-        <p>@[strings/login_welcome_desc]</p>
-      </div>
-      <div class="role-grid">
-        {parent}
-        {teacher}
-        {admin}
-      </div>
-      <div class="auth-divider">@[strings/common_or]</div>
-      <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center]</a>
-      {demo_keys}
-      <p class="hint auth-footnote">@[strings/login_footer_note]</p>
-    </div>
-  </section>
-</div>"#,
-        hero = auth_hero("login"),
-        mobile_brand = auth_brand(true),
-        mode_switch = mode_switch(mode, None),
-        parent = role_card(
-            "parent",
-            "@[strings/role_parent]",
-            "@[strings/login_parent_desc]",
-            "users",
-            ""
-        ),
-        teacher = role_card(
-            "teacher",
-            "@[strings/role_teacher]",
-            "@[strings/login_teacher_desc]",
-            "book",
-            "sky"
-        ),
-        admin = role_card(
-            "admin",
-            "@[strings/role_admin]",
-            "@[strings/login_admin_desc]",
-            "shield",
-            "amber"
-        ),
-        user_icon = icon("user"),
-        demo_keys = demo_keys,
-        flash = flash_html(flash)
-    );
-
-    let mut out = document_head("@[strings/login_submit]", "system");
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
-    out
-}
-
-pub fn login_page(mode: &str, role: &str, error: Option<&str>) -> String {
-    let mode = if mode == "pc" { "pc" } else { "mob" };
-    let (title, desc, icon_name, icon_class, demo_key, placeholder) = match role {
-        "parent" => (
-            "@[strings/login_parent_page_title]",
-            "@[strings/login_parent_page_desc]",
-            "users",
-            "",
-            db::DEMO_STUDENT_KEY,
-            "@[strings/login_placeholder]",
-        ),
-        "teacher" => (
-            "@[strings/login_teacher_page_title]",
-            "@[strings/login_teacher_page_desc]",
-            "book",
-            "sky",
-            db::DEMO_TEACHER_KEY,
-            "@[strings/login_placeholder_teacher]",
-        ),
-        "admin" => (
-            "@[strings/login_admin_page_title]",
-            "@[strings/login_admin_page_desc]",
-            "shield",
-            "amber",
-            db::DEMO_ADMIN_KEY,
-            "@[strings/login_placeholder_admin]",
-        ),
-        _ => (
-            "@[strings/login_student_page_title]",
-            "@[strings/login_student_page_desc]",
-            "graduation",
-            "",
-            db::DEMO_STUDENT_KEY,
-            "@[strings/login_placeholder]",
-        ),
-    };
-    let demo_label = match role {
-        "teacher" => "@[strings/login_demo_teacher]",
-        "admin" => "@[strings/login_demo_admin]",
-        _ => "@[strings/login_demo_parent]",
-    };
-
-    let role_links = ["parent", "teacher", "admin"]
-        .iter()
-        .map(|r| {
-            let active = if *r == role { " active" } else { "" };
-            format!(
-                r#"<a class="mode-pill{active}" href="/login/{mode}/{r}">{label}</a>"#,
-                active = active,
-                mode = mode,
-                r = r,
-                label = role_label(r)
-            )
-        })
-        .collect::<String>();
-
-    let error_html = error
-        .map(|e| format!(r#"<div class="alert">{}{}</div>"#, icon("alert"), esc(e)))
-        .unwrap_or_default();
-
-    let body = format!(
-        r#"<div class="auth-shell">
-  {hero}
-  <section class="auth-panel">
-    <div class="auth-card">
-      {mobile_brand}
-      <div class="auth-topline">
-        <a class="back-link" href="/login">{arrow}@[strings/login_back_identity]</a>
-        {mode_switch}
-      </div>
-      <div class="auth-heading">
-        <span class="role-icon {icon_class}">{role_icon}</span>
-        <h2>{title}</h2>
-        <p>{desc}</p>
-      </div>
-      {error_html}
-      <form class="login-form" method="post" action="/login/{mode}/{role}">
-        <div class="field">
-          <label class="label" for="key-input">@[strings/login_key_label] <span class="req">*</span></label>
-          <input class="input mono" id="key-input" name="key" type="text" autocomplete="off"
-                 spellcheck="false" placeholder="{placeholder}" required autofocus>
-          <span class="hint">@[strings/login_key_hint]</span>
-        </div>
-        <button class="btn primary block" type="submit">{login_icon}@[strings/login_submit]</button>
-        <details class="demo-keys">
-          <summary>{demo_label}</summary>
-          <div class="demo-key-list">
-            <button class="demo-key" type="button" data-demo-key="{demo_key}">
-              <span>{demo_label}</span><code>{demo_key}</code><span>@[strings/common_click_fill]</span>
-            </button>
-          </div>
-        </details>
-      </form>
-      <div class="auth-divider">@[strings/login_other_identity]</div>
-      <div class="mode-switch fill">{role_links}</div>
-      <div class="auth-divider">@[strings/common_or]</div>
-      <a class="auth-mini-link" href="/login/account">{user_icon}@[strings/login_account_center_link]</a>
-      <p class="hint auth-footnote">@[strings/login_authorized_note]</p>
-    </div>
-  </section>
-</div>"#,
-        hero = auth_hero("login"),
-        mobile_brand = auth_brand(true),
-        arrow = icon("arrow-left"),
-        mode_switch = mode_switch(mode, Some(role)),
-        icon_class = icon_class,
-        role_icon = icon(icon_name),
-        title = esc(title),
-        desc = esc(desc),
-        error_html = error_html,
-        mode = mode,
-        role = esc(role),
-        placeholder = esc(placeholder),
-        login_icon = icon("arrow-right"),
-        demo_label = demo_label,
-        demo_key = demo_key,
-        role_links = role_links,
-        user_icon = icon("user")
-    );
-
-    let mut out = document_head(title, "system");
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
-    out
-}
-
 // ---------------------------------------------------------------------------
 // 首页 / 征集 / 提交
 // ---------------------------------------------------------------------------
@@ -2307,12 +2007,11 @@ pub fn upload_detail(
 // ---------------------------------------------------------------------------
 
 pub fn user_guest(
-    mode: &str,
+    _mode: &str,
     flash: &Flash,
     prefill_key: &str,
     session_note: Option<&str>,
 ) -> String {
-    let mode = if mode == "pc" { "pc" } else { "mob" };
     let note = session_note
         .map(|n| {
             format!(

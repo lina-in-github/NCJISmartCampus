@@ -1,0 +1,48 @@
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="{home}" aria-label="@[strings/layout_brand_home]">
+      <span class="brand-mark">{logo}</span>
+      <span class="brand-text"><strong>@[strings/title]</strong><small>@[strings/brand_tagline]</small></span>
+    </a>
+    {class_block}
+    <nav class="side-nav" aria-label="@[strings/layout_main_nav]">
+      <span class="side-nav-label">@[strings/layout_space_nav]</span>
+      {side_nav}
+    </nav>
+    <div class="side-foot">
+      <a class="side-user" href="/user">
+        <span class="avatar sm{avatar_class}">{initial}</span>
+        <span class="who"><strong>{display}</strong><span>{role}</span></span>
+      </a>
+      <form method="post" action="/logout" class="inline-form">
+        <button class="side-logout" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
+      </form>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="eyebrow">{class_name} · {role}</span>
+        <h1>{title}</h1>
+      </div>
+      <div class="topbar-actions">
+        {view_switch}
+        <span class="role-chip"><span class="dot"></span>{role}</span>
+        <a class="icon-btn" href="/user" title="@[strings/role_account]" aria-label="@[strings/role_account]">{user_icon}</a>
+        <button class="icon-btn" id="theme-toggle" type="button" title="@[strings/common_theme_toggle]" aria-label="@[strings/common_theme_toggle]">
+          <span class="icon-moon">{moon}</span><span class="icon-sun">{sun}</span>
+        </button>
+        <form method="post" action="/logout" class="inline-form desktop-only">
+          <button class="icon-btn" type="submit" title="@[strings/common_logout]" aria-label="@[strings/common_logout]">{logout}</button>
+        </form>
+      </div>
+    </header>
+    <main class="content">
+      {flash}
+      {body}
+    </main>
+    <nav class="bottom-nav" aria-label="@[strings/layout_bottom_nav]">{bottom_nav}</nav>
+  </div>
+</div>
+<script>window.SC = {sc};</script>

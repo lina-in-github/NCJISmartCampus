@@ -2,19 +2,19 @@ use std::collections::HashMap;
 
 use axum::{
     extract::{Form, Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue},
     response::{Html, IntoResponse, Redirect, Response},
 };
 
 use crate::db;
-use crate::strings::{f2, t};
+use crate::strings::{t};
 use crate::tools::{
     clear_cookie, constant_time_eq, cookie_value, create_role_session, create_user_session,
     current_user, hash_password, invalidate_auth_sessions, now_ts, rand_string, role_session,
     url_encode, user_session_id, SID_COOKIE, USID_COOKIE,
 };
 use crate::types::{
-    AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, LoginForm, PasswordForm, Prefs,
+    AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, PasswordForm, Prefs,
     PrefsForm, Session, UserLoginForm, UserRegisterForm,
 };
 use crate::view::{self, Flash, LayoutCtx, StatItem};
@@ -63,11 +63,11 @@ fn no_store(mut res: Response) -> Response {
 fn html(s: String) -> Response {
     no_store(Html(crate::strings::apply(&s)).into_response())
 }
-
+/* 
 fn html_status(status: StatusCode, s: String) -> Response {
     no_store((status, Html(crate::strings::apply(&s))).into_response())
 }
-
+*/
 fn detect_mode(headers: &HeaderMap) -> String {
     let ua = headers
         .get(header::USER_AGENT)
@@ -267,92 +267,9 @@ pub async fn root(State(st): State<AppState>, headers: HeaderMap) -> Response {
     }
 }
 
-pub async fn login_index(headers: HeaderMap, Query(q): Q) -> Response {
+pub async fn login_index(_headers: HeaderMap, Query(_q): Q) -> Response {
     redirect("/login/account")
 }
-
-pub async fn login_page(
-    State(st): State<AppState>,
-    Path((mode, role)): Path<(String, String)>,
-    headers: HeaderMap,
-) -> Response {
-    let Some(mode) = normalize_mode(&mode) else {
-        return redirect("/login");
-    };
-    let Some(role) = normalize_role(&role) else {
-        return redirect("/login");
-    };
-    let _ = headers;
-    let _ = st;
-    html(view::login_page(mode, role, None))
-}
-
-pub async fn login_submit(
-    State(st): State<AppState>,
-    Path((mode, role)): Path<(String, String)>,
-    headers: HeaderMap,
-    Form(form): Form<LoginForm>,
-) -> Response {
-    let Some(mode) = normalize_mode(&mode) else {
-        return html_status(
-            StatusCode::BAD_REQUEST,
-            view::login_page("mob", "parent", Some(&t("login_error_wrong_address"))),
-        );
-    };
-    let Some(req_role) = normalize_role(&role) else {
-        return html_status(
-            StatusCode::NOT_FOUND,
-            view::login_page(mode, "parent", Some(&t("login_error_unknown_identity"))),
-        );
-    };
-    let key = form.key.trim();
-    if key.is_empty() {
-        return html_status(
-            StatusCode::BAD_REQUEST,
-            view::login_page(mode, req_role, Some(&t("login_error_enter_key"))),
-        );
-    }
-    let auth = {
-        let db = st.db.lock().unwrap();
-        db::load_auth_by_key(&db, key)
-    };
-    let Some(auth) = auth else {
-        return html_status(
-            StatusCode::UNAUTHORIZED,
-            view::login_page(mode, req_role, Some(&t("login_error_invalid_key"))),
-        );
-    };
-    let allowed = match req_role {
-        "parent" | "student" => auth.role == "student",
-        "teacher" => auth.role == "teacher",
-        "admin" => auth.role == "admin",
-        _ => false,
-    };
-    if !allowed {
-        let msg = f2(
-            "login_error_role_mismatch",
-            crate::tools::role_label(&auth.role),
-            crate::tools::role_label(req_role),
-        );
-        return html_status(
-            StatusCode::FORBIDDEN,
-            view::login_page(mode, req_role, Some(&msg)),
-        );
-    }
-    clear_role_session(&st, &headers);
-    // 学生身份用「家长 / 学生」哪张卡片登录，就记住哪套文案（纯展示偏好）。
-    if auth.role == "student" {
-        crate::tools::remember_view(&st, &headers, req_role);
-    }
-    let target = format!("/home/{mode}/{req_role}/", mode = mode, req_role = req_role);
-    let cookies = vec![crate::tools::session_cookie(
-        SID_COOKIE,
-        &create_role_session(&st, &auth, req_role, mode),
-    )];
-    // 角色登录只建立 sc_sid；账号中心必须通过用户名/密码另行建立 sc_uid。
-    with_cookies(&target, cookies)
-}
-
 pub async fn home_entry(State(st): State<AppState>, headers: HeaderMap) -> Response {
     if let Some((session, _)) = role_session(&st, &headers) {
         return redirect(&format!("/home/{}/{}/", session.mode, session.page_role));
