@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
     username     TEXT NOT NULL COLLATE NOCASE UNIQUE,
     salt         TEXT NOT NULL,
     pwhash       TEXT NOT NULL,
+    -- 非对称登录公钥（X25519，标准 base64）。密码本身不落库。
+    pubkey       TEXT,
     display_name TEXT NOT NULL DEFAULT '',
     prefs        TEXT NOT NULL DEFAULT '{}',
     created_at   INTEGER NOT NULL

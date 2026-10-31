@@ -1,6 +1,6 @@
 [package]
 name = "smart-campus"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "智慧校园 · 班级征集、提交与回复平台"
 
@@ -13,4 +13,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 rand = "0.8"
+ring = "0.17"
 regex = "1"

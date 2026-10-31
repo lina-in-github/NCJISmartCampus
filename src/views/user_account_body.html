@@ -42,19 +42,19 @@
   <section class="panel">
     <div class="panel-head"><h3 class="panel-title">{lock}@[strings/account_security]</h3></div>
     <div class="panel-body">
-      <form class="stack" method="post" action="/user/password">
+      <form class="stack" method="post" action="/user/password" data-auth-password data-username="{username}">
         <div class="field">
           <label class="label" for="old-pw">@[strings/account_current_password]</label>
-          <input class="input" id="old-pw" name="old" type="password" autocomplete="current-password" required>
+          <input class="input" id="old-pw" type="password" autocomplete="current-password" required>
         </div>
         <div class="form-grid">
           <div class="field">
             <label class="label" for="new-pw">@[strings/account_new_password]</label>
-            <input class="input" id="new-pw" name="new" type="password" minlength="6" autocomplete="new-password" required>
+            <input class="input" id="new-pw" type="password" minlength="6" autocomplete="new-password" required>
           </div>
           <div class="field">
             <label class="label" for="new-pw2">@[strings/account_confirm_new_password]</label>
-            <input class="input" id="new-pw2" name="new2" type="password" minlength="6" autocomplete="new-password" required>
+            <input class="input" id="new-pw2" type="password" minlength="6" autocomplete="new-password" required>
           </div>
         </div>
         <div><button class="btn primary" type="submit">@[strings/account_change_password]</button></div>

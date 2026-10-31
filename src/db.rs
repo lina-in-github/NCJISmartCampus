@@ -23,6 +23,12 @@ pub const DEMO_ADMIN2_KEY: &str = "SC-ADM-DEMO-2027";
 pub const DEMO_TEACHER2_KEY: &str = "SC-TEA-DEMO-2027";
 pub const DEMO_STUDENT_C2_KEY: &str = "SC-STU-DEMO-2027";
 
+/// 演示账号公钥（X25519）。由 PBKDF2-HMAC-SHA256(密码, `smart-campus/auth/v1:<用户名>`)
+/// 派生私钥后计算得到；密码本身不参与服务端校验。
+pub const DEMO_ADMIN_PUBKEY: &str = "aJ2+2QZhfvj/e30rH+si+J3e8gIbllhrAryrw8ou5BY=";
+pub const DEMO_TEACHER_PUBKEY: &str = "twPKqsL5RPHwLOWAbZw09o7CpwwoXCba+V0bJGkHMAw=";
+pub const DEMO_STUDENT_PUBKEY: &str = "3zcMdg6sj9+9nhW6FO2LVc48RxItRNw/YkXvZEnofVE=";
+
 /// 数据库句柄。所有 SQL 都封装在本模块中，其他模块只通过 db 函数访问。
 pub struct Database {
     conn: Mutex<Connection>,
@@ -49,8 +55,48 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
          PRAGMA synchronous=NORMAL;",
     )?;
     conn.execute_batch(SCHEMA)?;
+    migrate(&conn)?;
     seed_if_empty(&conn)?;
+    ensure_demo_pubkeys(&conn)?;
     Ok(conn)
+}
+
+/// 轻量迁移：为旧数据库补上 `users.pubkey` 列。
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let mut has_pubkey = false;
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(users)")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == "pubkey" {
+                has_pubkey = true;
+                break;
+            }
+        }
+    }
+    if !has_pubkey {
+        conn.execute_batch("ALTER TABLE users ADD COLUMN pubkey TEXT")?;
+    }
+    Ok(())
+}
+
+/// 为旧数据库中的演示账号补公钥（不覆盖用户已经设置的新公钥）。
+fn ensure_demo_pubkeys(conn: &Connection) -> rusqlite::Result<()> {
+    let demos = [
+        ("admin", DEMO_ADMIN_PUBKEY),
+        ("teacher", DEMO_TEACHER_PUBKEY),
+        ("student", DEMO_STUDENT_PUBKEY),
+    ];
+    for (username, pubkey) in demos {
+        conn.execute(
+            "UPDATE users SET pubkey = ?1
+             WHERE username = ?2 COLLATE NOCASE
+               AND (pubkey IS NULL OR pubkey = '')",
+            params![pubkey, username],
+        )?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +194,34 @@ pub struct UserWithSecret {
     pub user: UserCtx,
     pub salt: String,
     pub pwhash: String,
+}
+
+/// 登录流程需要的用户公开信息。
+#[derive(Clone, Debug)]
+pub struct LoginUser {
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub pubkey: Option<String>,
+}
+
+pub fn load_login_user(db: &Connection, username: &str) -> Option<LoginUser> {
+    db.query_row(
+        "SELECT id, username, display_name, pubkey
+         FROM users WHERE username = ?1 COLLATE NOCASE",
+        params![username.trim()],
+        |r| {
+            Ok(LoginUser {
+                id: r.get(0)?,
+                username: r.get(1)?,
+                display_name: r.get(2)?,
+                pubkey: r.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
 }
 
 pub fn load_user_with_secret(db: &Connection, username: &str) -> Option<UserWithSecret> {
@@ -1045,19 +1119,57 @@ pub fn username_taken(db: &Connection, username: &str) -> bool {
 pub fn register_user(
     db: &Connection,
     username: &str,
-    salt: &str,
-    pwhash: &str,
+    pubkey: &str,
+    display_name: &str,
 ) -> Result<i64, String> {
     if username_taken(db, username) {
         return Err("username already exists".to_string());
     }
+    let display_name = if display_name.trim().is_empty() {
+        username
+    } else {
+        display_name.trim()
+    };
+    // salt / pwhash 留空：新账号不使用服务端密码校验；旧账号迁移时才会用到。
     db.execute(
-        "INSERT INTO users (username, salt, pwhash, display_name, prefs, created_at)
-         VALUES (?1, ?2, ?3, ?1, '{}', ?4)",
-        params![username, salt, pwhash, now_ts()],
+        "INSERT INTO users (username, salt, pwhash, pubkey, display_name, prefs, created_at)
+         VALUES (?1, '', '', ?2, ?3, '{}', ?4)",
+        params![username, pubkey, display_name, now_ts()],
     )
     .map_err(|e| e.to_string())?;
     Ok(db.last_insert_rowid())
+}
+
+pub fn update_user_pubkey(db: &Connection, user_id: i64, pubkey: &str) -> Result<(), String> {
+    db.execute(
+        "UPDATE users SET pubkey = ?1, salt = '', pwhash = '' WHERE id = ?2",
+        params![pubkey, user_id],
+    )
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// 仅在账号还没有公钥时写入（用于旧密码账号的一次性迁移）。
+pub fn upgrade_user_pubkey(
+    db: &Connection,
+    user_id: i64,
+    pubkey: &str,
+) -> Result<bool, String> {
+    let changed = db
+        .execute(
+            "UPDATE users SET pubkey = ?1, salt = '', pwhash = ''
+             WHERE id = ?2 AND (pubkey IS NULL OR pubkey = '')",
+            params![pubkey, user_id],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(changed == 1)
+}
+
+/// 删除刚创建、但绑定密钥失败的账号（仅用于注册回滚）。
+pub fn delete_user(db: &Connection, user_id: i64) -> Result<(), String> {
+    db.execute("DELETE FROM users WHERE id = ?1", params![user_id])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 pub fn bind_auth_if_unclaimed(
@@ -1088,31 +1200,6 @@ pub fn update_user_prefs(
     .map_err(|e| e.to_string())
 }
 
-pub fn user_secret(db: &Connection, user_id: i64) -> Option<(String, String)> {
-    db.query_row(
-        "SELECT salt, pwhash FROM users WHERE id = ?1",
-        params![user_id],
-        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-    )
-    .optional()
-    .ok()
-    .flatten()
-}
-
-pub fn update_user_password(
-    db: &Connection,
-    user_id: i64,
-    salt: &str,
-    pwhash: &str,
-) -> Result<(), String> {
-    db.execute(
-        "UPDATE users SET salt = ?1, pwhash = ?2 WHERE id = ?3",
-        params![salt, pwhash, user_id],
-    )
-    .map(|_| ())
-    .map_err(|e| e.to_string())
-}
-
 // ---------------------------------------------------------------------------
 // 演示数据
 // ---------------------------------------------------------------------------
@@ -1126,9 +1213,9 @@ fn seed_if_empty(conn: &Connection) -> rusqlite::Result<()> {
     let now = now_ts();
 
     // 用户
-    let admin = seed_user(&tx, "admin", "admin123", "赵明远")?;
-    let teacher = seed_user(&tx, "teacher", "teacher123", "林书言")?;
-    let student = seed_user(&tx, "student", "student123", "陈小满")?;
+    let admin = seed_user(&tx, "admin", "admin123", DEMO_ADMIN_PUBKEY, "赵明远")?;
+    let teacher = seed_user(&tx, "teacher", "teacher123", DEMO_TEACHER_PUBKEY, "林书言")?;
+    let student = seed_user(&tx, "student", "student123", DEMO_STUDENT_PUBKEY, "陈小满")?;
 
     // 班级
     let c1 = new_id("cls");
@@ -1479,14 +1566,16 @@ fn seed_user(
     conn: &Connection,
     username: &str,
     password: &str,
+    pubkey: &str,
     display_name: &str,
 ) -> rusqlite::Result<i64> {
+    // 保留旧密码哈希用于兼容迁移；正常登录只使用公钥挑战。
     let salt = rand_string(16);
     let pwhash = hash_password(&salt, password);
     conn.execute(
-        "INSERT INTO users (username, salt, pwhash, display_name, prefs, created_at)
-         VALUES (?1, ?2, ?3, ?4, '{}', ?5)",
-        params![username, salt, pwhash, display_name, now_ts()],
+        "INSERT INTO users (username, salt, pwhash, pubkey, display_name, prefs, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, '{}', ?6)",
+        params![username, salt, pwhash, pubkey, display_name, now_ts()],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -1779,6 +1868,9 @@ mod tests {
             assert!(t.is_staff());
             let adm = load_auth_by_key(&conn, DEMO_ADMIN_KEY).unwrap();
             assert!(adm.is_admin());
+            let login = load_login_user(&conn, "student").unwrap();
+            assert_eq!(login.username, "student");
+            assert_eq!(login.pubkey.as_deref(), Some(DEMO_STUDENT_PUBKEY));
             let u = load_user_with_secret(&conn, "student").unwrap();
             assert_eq!(u.user.username, "student");
             let salt = u.salt.clone();

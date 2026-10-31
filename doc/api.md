@@ -1,6 +1,6 @@
 # 智慧校园 · API 参考
 
-所有接口均位于 `/api` 下，使用 `POST` + JSON。示例中的 base URL 默认为 `http://localhost:3000`。
+所有接口均位于 `/api` 下；除 `/api/health`（`GET`）外均使用 `POST` + JSON。示例中的 base URL 默认为 `http://localhost:3000`。
 
 ## 0. 通用约定
 
@@ -12,7 +12,7 @@ Content-Type: application/json
 
 ### 0.2 鉴权
 
-- 除 `/api/health` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
+- 除 `/api/health`、`/api/logintry`、`/api/getAuths`、`/api/resetPassword`、`/api/register`、`/api/upgrade-pubkey` 外，均需要请求体中的 `auth`：一个班级密钥，例如 `SC-STU-DEMO-2026`。
 - 密钥同时决定 **班级** 与 **角色**，不允许跨班操作。
 - `/api/del-object` 按原始需求只传 `id`；也接受可选的 `auth`，缺省时使用浏览器登录 cookie（`sc_sid`）鉴权。
 - 角色：`student`（学生）、`teacher`（老师）、`admin`（管理员）。家长使用学生密钥，不具备教师/管理员权限。
@@ -39,7 +39,7 @@ Content-Type: application/json
 | --- | --- |
 | 200 | 成功 |
 | 400 | 参数/格式错误（如非法正则、附件格式错误） |
-| 401 | 缺少或无效的 `auth` |
+| 401 | 缺少或无效的 `auth` / 登录会话 |
 | 403 | 权限不足（如学生调用下载） |
 | 404 | 对象不存在，或不属于当前班级 |
 | 422 | JSON 字段缺失或类型错误（框架级） |
@@ -52,6 +52,7 @@ Content-Type: application/json
 - 征集：`sub_*`
 - 提交：`up_*`
 - 回复：`rep_*`
+- 登录挑战会话：`login_*`（仅在 `/api/logintry` 响应中出现，300 秒有效）
 
 ### 0.5 时间
 
@@ -601,7 +602,222 @@ curl http://localhost:3000/api/health
 
 ---
 
-## 12. curl 全流程示例
+## 12. 用户登录（非对称挑战，v0.1.7）
+
+v0.1.7 起，**用户名 + 密码不再发送给服务端**。浏览器用密钥派生函数从密码派生
+X25519 私钥，注册 / 重置密码时只上传公钥；登录时服务端用公钥加密一个随机挑战，
+客户端解密后回答。以下接口都是公开接口，不需要请求体中的 `auth`。
+
+### 12.1 密钥派生约定
+
+| 参数 | 值 |
+| --- | --- |
+| KDF | PBKDF2-HMAC-SHA256 |
+| 迭代次数 | `210000` |
+| 盐 | `smart-campus/auth/v1:` + 用户名小写（trim 后） |
+| 输出长度 | 32 字节 |
+| 私钥 | 上述 32 字节，作为 X25519 标量 |
+| 公钥 | `X25519(private, basepoint)`，32 字节 |
+
+`/api/logintry` 会在响应的 `kdf` 字段回显服务端实际使用的参数与盐，客户端应优先使用
+该字段，以免用户名大小写导致派生结果不一致。
+
+> 密码和私钥永远不离开客户端；服务端只保存 32 字节公钥（base64）。
+> 旧账号的密码哈希只用于一次性的公钥迁移，迁移后会被清空。
+
+### 12.2 `byte[]` 的 JSON 编码
+
+响应中的 `challengeEncrypt`、`answerEncryptingKey` 使用**标准 base64** 字符串。
+请求中的 `encryptedAnswer`、`newPasswordPubKey` 等字段既接受 base64 字符串，
+也接受由 0–255 整数组成的 JSON 数组；推荐使用 base64。
+
+### 12.3 `/api/register`
+
+创建账号并可选绑定一个未认领的班级密钥。
+
+```json
+{
+  "username": "alice",
+  "passwordPubKey": "BASE64_X25519_PUBLIC_KEY",
+  "key": "SC-STU-XXXXXXXX",
+  "displayName": "Alice"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `username` | string | ✅ | 2–32 位，中英文 / 数字 / `_` / `-`，大小写不敏感 |
+| `passwordPubKey` | byte[] | ✅ | 32 字节 X25519 公钥；也接受 `pubkey` / `publicKey` |
+| `key` | string | — | 可选，绑定一个尚未被认领的 auth 密钥 |
+| `displayName` | string | — | 显示名称，缺省为用户名 |
+
+```json
+{
+  "ok": true,
+  "id": 4,
+  "userID": 4,
+  "username": "alice",
+  "displayName": "alice",
+  "boundAuth": "SC-STU-XXXXXXXX"
+}
+```
+
+失败：用户名已存在返回 `400`（`code: "username_taken"`），公钥格式错误返回 `400`。
+注册只保存公钥，不接收密码；注册后请立即调用 `/api/logintry` + `/api/getAuths`
+完成一次挑战验证。
+
+### 12.4 `/api/logintry`
+
+```json
+{ "username": "student" }
+```
+
+响应（`ok: true`）：
+
+```json
+{
+  "ok": true,
+  "loginSessionID": "login_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "challengeEncrypt": "BASE64_92_BYTES",
+  "answerEncryptingKey": "BASE64_32_BYTES",
+  "expiresIn": 300,
+  "username": "student",
+  "displayName": "陈小满",
+  "kdf": {
+    "name": "PBKDF2-HMAC-SHA256",
+    "iterations": 210000,
+    "salt": "smart-campus/auth/v1:student",
+    "privateKey": "X25519",
+    "challengeEncryption": "X25519-HKDF-SHA256-AES-256-GCM",
+    "answerEncryption": "AES-256-GCM"
+  }
+}
+```
+
+- `loginSessionID` 有效期 **300 秒**，内存保存，服务重启后失效。
+- `challengeEncrypt` 是 ECIES 密文：`临时公钥(32) || nonce(12) || AES-GCM 密文与 tag`。
+- `answerEncryptingKey` 是 32 字节一次性对称密钥，用于加密回答。
+- 账号尚未设置公钥时返回 `401`，并带 `"code": "pubkey_missing"`；客户端可用
+  `/api/upgrade-pubkey` 做一次旧密码迁移。
+
+### 12.5 `/api/getAuths`
+
+```json
+{
+  "loginSessionID": "login_XXXXXXXX",
+  "encryptedAnswer": "BASE64_60_BYTES"
+}
+```
+
+响应：
+
+```json
+{
+  "ok": true,
+  "auths": ["SC-STU-DEMO-2026"],
+  "authIDs": ["auth_xxxxxxxxxxxx"],
+  "members": [
+    {
+      "id": "auth_xxxxxxxxxxxx",
+      "key": "SC-STU-DEMO-2026",
+      "classID": "cls_xxxxxxxxxxxx",
+      "className": "高一（3）班",
+      "role": "student",
+      "studentID": "G2603-01",
+      "shortStudentID": 1,
+      "displayName": "陈小满"
+    }
+  ],
+  "user": { "id": 3, "username": "student", "displayName": "陈小满" }
+}
+```
+
+- `auths` 是需求中的字段：该账号绑定的全部 auth **密钥**（可直接用于其他 API 的 `auth` 参数）。
+- `authIDs` / `members` / `user` 是便于客户端使用的扩展字段。
+- 验证成功会同时写入浏览器账号会话 cookie（`sc_uid`，HttpOnly、SameSite=Lax）；
+  纯 API 客户端可以忽略 cookie，只使用 `auths`。
+- 答案错误或会话过期返回 `401`。同一会话连续失败 5 次后作废。
+
+### 12.6 `/api/resetPassword`
+
+验证挑战后替换公钥（即修改密码）。
+
+```json
+{
+  "loginSessionID": "login_XXXXXXXX",
+  "encryptedAnswer": "BASE64_60_BYTES",
+  "newPasswordPubKey": "BASE64_NEW_X25519_PUBLIC_KEY"
+}
+```
+
+```json
+{ "ok": true, "msg": "password reset" }
+```
+
+- `newPasswordPubKey` 必须是用**新密码**派生的 32 字节 X25519 公钥。
+- 成功后旧密码立即失效，该账号的所有旧登录会话与临时挑战会话都会作废；
+  当前浏览器会收到一个新的 `sc_uid` cookie。
+- 失败返回 `401`（挑战错误 / 会话过期）或 `400`（公钥格式错误）。
+
+### 12.7 `/api/upgrade-pubkey`（旧账号迁移）
+
+仅用于老数据库中没有公钥的账号。它仍然校验旧密码哈希，成功后清空旧哈希。
+
+```json
+{
+  "username": "student",
+  "password": "student123",
+  "pubkey": "BASE64_X25519_PUBLIC_KEY"
+}
+```
+
+```json
+{ "ok": true, "msg": "public key upgraded", "username": "student" }
+```
+
+新账号不需要此接口；浏览器在 `/api/logintry` 返回 `pubkey_missing` 时会自动调用一次。
+
+### 12.8 挑战与回答的加密细节
+
+**服务端 → 客户端（挑战）**
+
+1. 生成临时 X25519 密钥对 `(eph_sk, eph_pk)`。
+2. `shared = X25519(eph_sk, user_pk)`。
+3. `key = HKDF-SHA256(ikm=shared, salt=空, info="smart-campus/challenge/v1")`。
+4. `nonce` = 12 字节随机数；`AES-256-GCM(key, nonce, challenge, aad=空)`。
+5. `challengeEncrypt = eph_pk(32) || nonce(12) || ciphertext(32) || tag(16)`（92 字节）。
+
+**客户端 → 服务端（回答）**
+
+1. 客户端用私钥与 `eph_pk` 做 X25519，按相同 HKDF / AES-GCM 规则解密，得到 32 字节挑战。
+2. `nonce` = 12 字节随机数；用 `answerEncryptingKey` 做 AES-256-GCM 加密挑战。
+3. `encryptedAnswer = nonce(12) || ciphertext(32) || tag(16)`（60 字节）。
+
+服务端解密后与原始挑战做常数时间比较。`answerEncryptingKey` 虽然随响应下发，但
+攻击者没有用户私钥就无法解开挑战，因此无法伪造回答；生产环境仍应使用 HTTPS。
+
+> 挑战密文可以被攻击者离线用于猜测密码（PBKDF2 + X25519 + AES-GCM），因此用户应使用
+> 强密码；服务端使用 210,000 次 PBKDF2 迭代来提高离线破解成本。登录挑战 300 秒过期，
+> 同一挑战连续失败 5 次即作废。
+
+### 12.9 浏览器与命令行客户端
+
+- 浏览器：`/static/auth.js`（源码 `src/assets/auth.js`）实现 KDF、X25519、HKDF、
+  AES-GCM，并自动接管 `/login/account` 的登录 / 注册表单与 `/user` 的改密表单。
+- 命令行 / 测试：`scripts/auth-client.js` 复用同一份密码学实现。
+
+```bash
+BASE=http://127.0.0.1:3000
+node scripts/auth-client.js login --base "$BASE" --username student --password student123
+# -> {"ok":true,"auths":["SC-STU-DEMO-2026"],...,"cookie":"sc_uid=..."}
+
+node scripts/auth-client.js register --base "$BASE" --username alice --password pass1234 --key SC-STU-XXXXXXXX
+node scripts/auth-client.js reset --base "$BASE" --username alice --old-password pass1234 --new-password pass5678
+```
+
+---
+
+## 13. curl 全流程示例
 
 ```bash
 BASE=http://localhost:3000
@@ -644,6 +860,6 @@ curl -s $BASE/api/del-object \
 
 ---
 
-## 13. 页面使用的接口
+## 14. 页面使用的接口
 
 页面本身由服务端渲染，首页、提交、回复、上传、删除、账号中心等交互按需调用上述 API；账号中心的密码、偏好、身份绑定、创建班级使用同源表单 POST（`/user/*`），避免在浏览器中暴露密码到 JSON 请求。上传页在浏览器内使用 `FileReader` 将文件转换为 base64 后调用 `/api/upload`。

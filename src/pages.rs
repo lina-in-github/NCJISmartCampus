@@ -9,9 +9,9 @@ use axum::{
 use crate::db;
 use crate::strings::{t};
 use crate::tools::{
-    clear_cookie, constant_time_eq, cookie_value, create_role_session, create_user_session,
-    current_user, hash_password, invalidate_auth_sessions, now_ts, rand_string, role_session,
-    url_encode, user_session_id, SID_COOKIE, USID_COOKIE,
+    clear_cookie, cookie_value, create_role_session, create_user_session, current_user,
+    invalidate_auth_sessions, now_ts, role_session, url_encode, user_session_id, valid_username,
+    SID_COOKIE, USID_COOKIE,
 };
 use crate::types::{
     AppState, AuthCtx, ClaimForm, ClassForm, EnterClassForm, PasswordForm, Prefs,
@@ -667,42 +667,17 @@ pub async fn login_account_page(
     html(view::user_guest(&mode, &flash_from(&q), "", None))
 }
 
+/// 旧表单登录入口：密码现在只在浏览器里使用。
+/// 浏览器会拦截表单提交并调用 /api/logintry + /api/getAuths；没有 JS 时给出提示。
 pub async fn user_login(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Form(form): Form<UserLoginForm>,
+    State(_st): State<AppState>,
+    _headers: HeaderMap,
+    Form(_form): Form<UserLoginForm>,
 ) -> Response {
-    let username = form.username.trim();
-    if username.is_empty() || form.password.is_empty() {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_enter_username_password"));
-    }
-    let found = {
-        let db = st.db.lock().unwrap();
-        db::load_user_with_secret(&db, username)
-    };
-    let Some(found) = found else {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_wrong_credentials"));
-    };
-    if !constant_time_eq(&hash_password(&found.salt, &form.password), &found.pwhash) {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_wrong_credentials"));
-    }
-    clear_user_session(&st, &headers);
-    let token = create_user_session(&st, found.user.id);
-    let target = format!("/user?ok={}", url_encode(&t("flash_welcome")));
-    with_cookies(
-        &target,
-        vec![crate::tools::session_cookie(USID_COOKIE, &token)],
-    )
+    msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_js_required"))
 }
 
-fn valid_username(name: &str) -> bool {
-    let n = name.chars().count();
-    (2..=32).contains(&n)
-        && name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-}
-
+/// 无 JS 的注册兜底：表单可直接提交 `pubkey`（由客户端离线派生）。
 pub async fn user_register(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -712,15 +687,18 @@ pub async fn user_register(
     if !valid_username(username) {
         return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_username_invalid"));
     }
-    if form.password.chars().count() < 6 {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_min"));
+    let pubkey_text = form.pubkey.trim();
+    if pubkey_text.is_empty() {
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_js_required"));
     }
-    if form.password != form.password2 {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_mismatch"));
+    let pubkey = match crate::crypto::b64_decode(pubkey_text) {
+        Ok(bytes) if bytes.len() == crate::crypto::KEY_LEN => bytes,
+        _ => return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_pubkey_invalid")),
+    };
+    if crate::crypto::validate_public_key(&pubkey).is_err() {
+        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_pubkey_invalid"));
     }
-    if form.password.chars().count() > 128 {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_password_too_long"));
-    }
+    let pubkey_b64 = crate::crypto::b64_encode(&pubkey);
 
     let key = form.key.trim();
     let claim = if key.is_empty() {
@@ -737,11 +715,9 @@ pub async fn user_register(
         }
     };
 
-    let salt = rand_string(16);
-    let pwhash = hash_password(&salt, &form.password);
     let created = {
         let db = st.db.lock().unwrap();
-        db::register_user(&db, username, &salt, &pwhash)
+        db::register_user(&db, username, &pubkey_b64, username)
     };
     let Ok(user_id) = created else {
         return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_username_taken"));
@@ -929,51 +905,13 @@ pub async fn user_prefs(
     }
 }
 
+/// 旧改密接口：密码不离开浏览器，由前端调用 `/api/resetPassword`。
 pub async fn user_password(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Form(form): Form<PasswordForm>,
+    State(_st): State<AppState>,
+    _headers: HeaderMap,
+    Form(_form): Form<PasswordForm>,
 ) -> Response {
-    let Some(user) = current_user(&st, &headers) else {
-        return msg_redirect(ACCOUNT_LOGIN, "err", &t("flash_need_login"));
-    };
-    if form.new.chars().count() < 6 {
-        return msg_redirect("/user", "err", &t("flash_password_min"));
-    }
-    if form.new != form.new2 {
-        return msg_redirect("/user", "err", &t("flash_password_mismatch"));
-    }
-    let secret = {
-        let db = st.db.lock().unwrap();
-        db::user_secret(&db, user.id)
-    };
-    let Some((salt, hash)) = secret else {
-        return msg_redirect("/user", "err", &t("flash_account_missing"));
-    };
-    if !constant_time_eq(&hash_password(&salt, &form.old), &hash) {
-        return msg_redirect("/user", "err", &t("flash_current_password_wrong"));
-    }
-    let new_salt = rand_string(16);
-    let new_hash = hash_password(&new_salt, &form.new);
-    let res = {
-        let db = st.db.lock().unwrap();
-        db::update_user_password(&db, user.id, &new_salt, &new_hash)
-    };
-    match res {
-        Ok(_) => {
-            // 保留当前会话，清除该用户的其他账号会话。
-            let current_token = cookie_value(&headers, USID_COOKIE);
-            st.user_sessions
-                .lock()
-                .unwrap()
-                .retain(|t, uid| *uid != user.id || Some(t.as_str()) == current_token.as_deref());
-            msg_redirect("/user", "ok", &t("flash_password_changed"))
-        }
-        Err(e) => {
-            eprintln!("change password failed: {e}");
-            msg_redirect("/user", "err", &t("flash_change_failed"))
-        }
-    }
+    msg_redirect("/user", "err", &t("flash_js_required"))
 }
 
 pub async fn user_create_class(

@@ -13,6 +13,7 @@ use axum::{
 use crate::types::AppState;
 
 mod api;
+mod crypto;
 mod db;
 mod pages;
 mod strings;
@@ -44,6 +45,20 @@ async fn static_js() -> Response {
             (header::CACHE_CONTROL, "no-cache"),
         ],
         crate::strings::apply(include_str!("assets/app.js")),
+    )
+        .into_response()
+}
+
+async fn static_auth_js() -> Response {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        crate::strings::apply(include_str!("assets/auth.js")),
     )
         .into_response()
 }
@@ -101,6 +116,7 @@ async fn main() {
         db: Arc::new(db::Database::new(conn)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         user_sessions: Arc::new(Mutex::new(HashMap::new())),
+        login_sessions: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -133,8 +149,16 @@ async fn main() {
         .route("/api/rename-auth", post(api::rename_auth))
         .route("/api/del-object", post(api::del_object))
         .route("/api/health", get(api::health))
+        .route("/api/logintry", post(api::logintry))
+        .route("/api/getAuths", post(api::get_auths))
+        .route("/api/get-auths", post(api::get_auths))
+        .route("/api/resetPassword", post(api::reset_password))
+        .route("/api/reset-password", post(api::reset_password))
+        .route("/api/register", post(api::register))
+        .route("/api/upgrade-pubkey", post(api::upgrade_pubkey))
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
+        .route("/static/auth.js", get(static_auth_js))
         .route("/static/strings.js", get(static_strings))
         .route("/favicon.svg", get(favicon))
         .layer(DefaultBodyLimit::max(32 * 1024 * 1024))

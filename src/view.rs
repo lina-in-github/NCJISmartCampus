@@ -527,7 +527,7 @@ fn document_head(title: &str, theme: &str) -> String {
 <title>{title} · @[strings/title]</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 {theme_boot}
-<link rel="stylesheet" href="/static/app.css?v=5">
+<link rel="stylesheet" href="/static/app.css?v=6">
 </head>"##,
         theme = esc(theme),
         title = esc(title),
@@ -571,7 +571,7 @@ fn page_footer() -> String {
   </div>
   <img alt="@[strings/common_attachment_preview]">
 </dialog>
-<script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script>
+<script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=6"></script>
 </body>
 </html>"#
     )
@@ -2032,7 +2032,7 @@ pub fn user_guest(
         prefill_key = esc(prefill_key)
     );
     let mut out = document_head("@[strings/role_account]", "system");
-    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=5"></script><script src="/static/app.js?v=5"></script></body></html>"#));
+    out.push_str(&format!(r#"<body>{body}<div class="toast-wrap"></div><script src="/static/strings.js?v=6"></script><script src="/static/app.js?v=6"></script><script src="/static/auth.js?v=6"></script></body></html>"#));
     out
 }
 

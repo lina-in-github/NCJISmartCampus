@@ -19,6 +19,8 @@ pub struct AppState {
     pub sessions: Arc<Mutex<HashMap<String, Session>>>,
     /// 账号会话：sc_uid cookie -> user id（用于 /user 账号中心）
     pub user_sessions: Arc<Mutex<HashMap<String, i64>>>,
+    /// 非对称登录的临时挑战会话：loginSessionID -> 挑战与状态。
+    pub login_sessions: Arc<Mutex<HashMap<String, LoginSession>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,6 +30,18 @@ pub struct Session {
     pub page_role: String,
     pub mode: String,
     pub created_at: i64,
+}
+
+/// `/api/logintry` 创建的一次性挑战会话（保存在内存，5 分钟有效）。
+#[derive(Clone, Debug)]
+pub struct LoginSession {
+    pub user_id: i64,
+    pub challenge: Vec<u8>,
+    pub answer_key: Vec<u8>,
+    pub created_at: i64,
+    /// 是否已经通过挑战验证（getAuths / resetPassword 会置位）。
+    pub verified: bool,
+    pub attempts: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -251,6 +265,90 @@ pub struct ReplyRow {
 // API 请求体
 // ---------------------------------------------------------------------------
 
+/// JSON 中的 `byte[]`：既接受标准 base64 字符串，也接受 0–255 的整数数组。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ByteInput {
+    Text(String),
+    Array(Vec<u8>),
+}
+
+impl ByteInput {
+    pub fn decode(&self) -> Result<Vec<u8>, String> {
+        match self {
+            ByteInput::Text(text) => crate::crypto::b64_decode(text),
+            ByteInput::Array(bytes) => Ok(bytes.clone()),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct LoginTryReq {
+    #[serde(alias = "user", alias = "name")]
+    pub username: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetAuthsReq {
+    #[serde(
+        rename = "loginSessionID",
+        alias = "login_session_id",
+        alias = "loginSessionId",
+        alias = "id"
+    )]
+    pub login_session_id: String,
+    #[serde(rename = "encryptedAnswer", alias = "encrypted_answer")]
+    pub encrypted_answer: ByteInput,
+}
+
+#[derive(Deserialize)]
+pub struct ResetPasswordReq {
+    #[serde(
+        rename = "loginSessionID",
+        alias = "login_session_id",
+        alias = "loginSessionId",
+        alias = "id"
+    )]
+    pub login_session_id: String,
+    #[serde(rename = "encryptedAnswer", alias = "encrypted_answer")]
+    pub encrypted_answer: ByteInput,
+    #[serde(
+        rename = "newPasswordPubKey",
+        alias = "new_password_pub_key",
+        alias = "newPasswordPubkey",
+        alias = "new_password_pubkey",
+        alias = "pubkey",
+        alias = "publicKey"
+    )]
+    pub new_password_pub_key: ByteInput,
+}
+
+#[derive(Deserialize)]
+pub struct RegisterReq {
+    pub username: String,
+    #[serde(
+        rename = "passwordPubKey",
+        alias = "password_pub_key",
+        alias = "passwordPubkey",
+        alias = "pubkey",
+        alias = "pubKey",
+        alias = "publicKey"
+    )]
+    pub pubkey: ByteInput,
+    #[serde(default)]
+    pub key: String,
+    #[serde(default, rename = "displayName", alias = "display_name")]
+    pub display_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpgradePubkeyReq {
+    pub username: String,
+    pub password: String,
+    #[serde(rename = "pubkey", alias = "publicKey", alias = "passwordPubKey")]
+    pub pubkey: ByteInput,
+}
+
 #[derive(Deserialize)]
 pub struct UploadReq {
     pub auth: String,
@@ -341,16 +439,24 @@ pub struct DelObjectReq {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct UserLoginForm {
     pub username: String,
+    #[serde(default)]
     pub password: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct UserRegisterForm {
     pub username: String,
+    #[serde(default)]
     pub password: String,
+    #[serde(default)]
     pub password2: String,
+    /// 无 JS 兜底：客户端提前算好的 X25519 公钥（base64）。
+    #[serde(default)]
+    pub pubkey: String,
     #[serde(default)]
     pub key: String,
 }
@@ -374,9 +480,13 @@ pub struct PrefsForm {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct PasswordForm {
+    #[serde(default)]
     pub old: String,
+    #[serde(default)]
     pub new: String,
+    #[serde(default)]
     pub new2: String,
 }
 
@@ -439,6 +549,14 @@ mod tests {
             );
             let _ = std::fs::remove_file(path);
         }
+    }
+
+    #[test]
+    fn byte_input_accepts_base64_and_arrays() {
+        let from_text: ByteInput = serde_json::from_str("\"aGVsbG8=\"").unwrap();
+        assert_eq!(from_text.decode().unwrap(), b"hello");
+        let from_array: ByteInput = serde_json::from_str("[104,101,108,108,111]").unwrap();
+        assert_eq!(from_array.decode().unwrap(), b"hello");
     }
 
     #[test]

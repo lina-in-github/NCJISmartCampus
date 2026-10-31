@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 智慧校园 · HTTP 冒烟测试
-# 依赖：bash、curl、jq、sqlite3、cargo。会在临时数据库上启动独立服务，结束后自动清理。
+# 依赖：bash、curl、jq、sqlite3、cargo、node。会在临时数据库上启动独立服务，结束后自动清理。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,6 +11,7 @@ BASE="http://127.0.0.1:${PORT}"
 TMP="$(mktemp -d)"
 BIN="$ROOT/target/debug/smart-campus"
 PID=""
+AUTH_CLIENT="$ROOT/scripts/auth-client.js"
 
 ADMIN="SC-ADM-DEMO-2026"
 TEACHER="SC-TEA-DEMO-2026"
@@ -58,6 +59,34 @@ http_code() {
     -H 'Content-Type: application/json' -d "$body"
 }
 
+# 非对称登录测试客户端（与浏览器共用 src/assets/auth.js 的密码学实现）。
+account_login() {
+  node "$AUTH_CLIENT" login --base "$BASE" --username "$1" --password "$2"
+}
+
+# 把 `sc_uid=...` 写入 Netscape cookie jar，便于和其他会话 cookie 合并。
+cookie_jar() {
+  local file="$1" cookie="$2"
+  local token="${cookie#sc_uid=}"
+  local domain="${BASE#http://}"
+  domain="${domain%%:*}"
+  printf '# Netscape HTTP Cookie File\n%s\tFALSE\t/\tFALSE\t0\tsc_uid\t%s\n' "$domain" "$token" >"$file"
+}
+
+# 通过账号中心登录并进入指定班级身份，生成同时含 sc_uid / sc_sid 的 cookie jar。
+role_cookie() {
+  local username="$1" password="$2" auth_key="$3" out="$4"
+  local login_json cookie auth_id
+  login_json="$(account_login "$username" "$password")"
+  cookie="$(jq -r .cookie <<<"$login_json")"
+  auth_id="$(jq -r --arg key "$auth_key" '.members[] | select(.key == $key) | .id' <<<"$login_json" | head -1)"
+  [[ -n "$auth_id" && "$auth_id" != "null" ]] || fail "账号 $username 未绑定 $auth_key"
+  cookie_jar "$out" "$cookie"
+  curl -sS -b "$out" -c "$out" -o /dev/null -X POST -d "auth_id=$auth_id" "$BASE/user/enter"
+}
+
+command -v node >/dev/null 2>&1 || fail "需要 node 来运行非对称登录测试"
+
 echo "==> 构建"
 cargo build --offline --quiet
 [[ -x "$BIN" ]] || fail "找不到可执行文件 $BIN"
@@ -77,7 +106,7 @@ done
 echo "==> 健康检查 / 页面 / 字符串"
 health="$(curl -sS "$BASE/api/health")"
 assert_jq "$health" '.ok == true' "健康检查"
-LOGIN_HTML="$(curl -sS "$BASE/login")"
+LOGIN_HTML="$(curl -sS "$BASE/login/account")"
 grep -q '智慧校园' <<<"$LOGIN_HTML" || fail "登录页未渲染"
 if grep -q '@\[strings/' <<<"$LOGIN_HTML"; then fail "登录页存在未替换的字符串标签"; fi
 if grep -q 'style=' <<<"$LOGIN_HTML"; then fail "登录页存在行内样式（HTML/CSS 未解耦）"; fi
@@ -91,6 +120,24 @@ assert_eq "$code" "303" "根路径跳转"
 STRING_COUNT="$(sqlite3 "$TMP/strings.db" "SELECT COUNT(*) FROM strings WHERE language = 'zh-CN';")"
 [[ "$STRING_COUNT" -gt 100 ]] || fail "strings.db 同步数量异常：$STRING_COUNT"
 curl -sS "$BASE/static/strings.js" | grep -q '"title"' || fail "strings.js 未输出"
+curl -sS "$BASE/static/auth.js" | grep -q 'SCAuthCrypto' || fail "auth.js 未输出"
+
+echo "==> 非对称登录 API（logintry / getAuths / resetPassword）"
+LOGIN_TRY="$(post /api/logintry '{"username":"student"}')"
+assert_jq "$LOGIN_TRY" '.ok == true and (.loginSessionID | startswith("login_")) and (.challengeEncrypt | type == "string") and (.answerEncryptingKey | type == "string")' "logintry 返回挑战"
+LOGIN_SID="$(jq -r .loginSessionID <<<"$LOGIN_TRY")"
+assert_eq "$(http_code /api/getAuths "{\"loginSessionID\":\"$LOGIN_SID\",\"encryptedAnswer\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}")" "401" "getAuths 拒绝错误答案"
+assert_eq "$(http_code /api/getAuths '{"loginSessionID":"missing","encryptedAnswer":"AAAA"}')" "401" "getAuths 拒绝未知会话"
+assert_eq "$(http_code /api/logintry '{"username":"nobody-here"}')" "401" "logintry 未知用户"
+assert_eq "$(http_code /api/register '{"username":"badpub","passwordPubKey":"AAAA"}')" "400" "register 拒绝非法公钥"
+assert_jq "$(account_login student student123)" '.ok == true and (.auths | index("SC-STU-DEMO-2026"))' "logintry/getAuths 完整登录"
+
+# 旧账号迁移：清空演示学生的公钥，再用旧密码哈希换公钥。
+sqlite3 "$TMP/test.db" "UPDATE users SET pubkey = NULL WHERE username = 'student';"
+assert_eq "$(http_code /api/logintry '{"username":"student"}')" "401" "logintry 提示公钥缺失"
+MIGRATE_PUB="$(node "$AUTH_CLIENT" pubkey --username student --password student123 | jq -r .pubkey)"
+assert_jq "$(post /api/upgrade-pubkey "{\"username\":\"student\",\"password\":\"student123\",\"pubkey\":\"$MIGRATE_PUB\"}")" '.ok == true' "旧账号迁移公钥"
+assert_jq "$(account_login student student123)" '.ok == true' "迁移后可登录"
 
 echo "==> 发布征集"
 SUB_JSON="$(post /api/new-submission "{\"auth\":\"$TEACHER\",\"name\":\"冒烟测试征集\",\"desc\":\"自动化测试\",\"type\":\"homework\",\"deadLine\":\"2026-12-31T20:00\"}")"
@@ -124,7 +171,7 @@ DL="$(post /api/download "{\"auth\":\"$TEACHER\",\"which\":\"$SUB\",\"match_mode
 assert_jq "$DL" '.datas[0].reply == ["收到，完成得不错。"]' "download 回复"
 
 echo "==> 学生页面（列表范围与渲染）"
-curl -sS -c "$TMP/stu-cookie" -o /dev/null -X POST -d "key=$STUDENT" "$BASE/login/mob/student"
+role_cookie student student123 "$STUDENT" "$TMP/stu-cookie"
 HOME_HTML="$(curl -sS -b "$TMP/stu-cookie" "$BASE/home/mob/student/")"
 grep -q "函数与导数" <<<"$HOME_HTML" || fail "学生首页没有显示班级征集"
 if grep -q "还没有征集" <<<"$HOME_HTML"; then fail "学生首页错误显示暂无征集"; fi
@@ -135,12 +182,12 @@ grep -q "函数与导数" <<<"$SUBS_HTML" || fail "学生征集列表为空"
 if grep -q '@\[strings/' <<<"$SUBS_HTML"; then fail "学生征集页存在未替换的字符串标签"; fi
 if grep -q 'style=' <<<"$SUBS_HTML"; then fail "学生征集页存在行内样式（HTML/CSS 未解耦）"; fi
 # 老师空间别名 /home/*/teachers
-curl -sS -c "$TMP/tea-cookie" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
+role_cookie teacher teacher123 "$TEACHER" "$TMP/tea-cookie"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/")" "200" "teachers 路径别名"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "林书言" || fail "老师空间页面缺少身份信息"
-# 已登录时 /login 仍展示身份选择，便于切换 auth；/ 则回到当前空间
-assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login")" "200" "已登录访问登录页"
-curl -sS -b "$TMP/tea-cookie" "$BASE/login" | grep -q "选择你的登录身份" || fail "登录页缺少身份选择"
+# 已登录时 /login 统一跳到账号中心；/ 则回到当前空间
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login")" "303" "已登录访问登录页"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$BASE/login")" "$BASE/login/account" "登录页跳转账号中心"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/")" "303" "已登录访问根路径"
 
 echo "==> 问卷模式"
@@ -256,8 +303,15 @@ curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teacher/submission/$SHEET/all" | gr
 assert_jq "$(post /api/del-object "{\"auth\":\"$ADMIN\",\"id\":\"$SHEET\"}")" '.ok == true' "删除答题卡征集"
 
 echo "==> 学生 / 家长视角（前台区分，API 不变）"
-# 同一个学生密钥：用「家长」卡片登录即家长视角，文案区分「孩子」
-curl -sS -c "$TMP/par-cookie" -o /dev/null -X POST -d "key=$STUDENT" "$BASE/login/mob/parent"
+# 同一个学生身份：账号偏好设为家长视角后进入，文案区分「孩子」
+PAR_LOGIN="$(account_login student student123)"
+PAR_ACCOUNT_COOKIE="$(jq -r .cookie <<<"$PAR_LOGIN")"
+PAR_AUTH_ID="$(jq -r --arg key "$STUDENT" '.members[] | select(.key == $key) | .id' <<<"$PAR_LOGIN" | head -1)"
+cookie_jar "$TMP/par-cookie" "$PAR_ACCOUNT_COOKIE"
+curl -sS -b "$TMP/par-cookie" -o /dev/null -X POST \
+  --data-urlencode 'display_name=陈小满' --data-urlencode 'theme=system' \
+  --data-urlencode 'mode=mob' --data-urlencode 'view=parent' "$BASE/user/prefs"
+curl -sS -b "$TMP/par-cookie" -c "$TMP/par-cookie" -o /dev/null -X POST -d "auth_id=$PAR_AUTH_ID" "$BASE/user/enter"
 PARENT_HOME="$(curl -sS -b "$TMP/par-cookie" "$BASE/home/mob/parent/")"
 grep -q "孩子提交" <<<"$PARENT_HOME" || fail "家长视角首页缺少家长文案"
 grep -q '切换到学生视角' <<<"$PARENT_HOME" || fail "家长视角缺少切换入口"
@@ -271,8 +325,10 @@ assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$B
   "$BASE/home/mob/teacher/" "老师不能切到家长视角"
 
 # 个人主页（账号中心）配置显示模式
-VIEW_COOKIE="$TMP/view-cookie"
-curl -sS -c "$VIEW_COOKIE" -o /dev/null -X POST -d 'username=student&password=student123' "$BASE/user/login"
+VIEW_LOGIN="$(account_login student student123)"
+assert_jq "$VIEW_LOGIN" '.ok == true and (.auths | index("SC-STU-DEMO-2026"))' "非对称登录返回 auth"
+VIEW_COOKIE="$(jq -r .cookie <<<"$VIEW_LOGIN")"
+[[ -n "$VIEW_COOKIE" ]] || fail "非对称登录未建立账号会话"
 assert_eq "$(curl -sS -b "$VIEW_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
   --data-urlencode 'display_name=Smoke' --data-urlencode 'theme=system' --data-urlencode 'mode=mob' \
   --data-urlencode 'view=parent' "$BASE/user/prefs")" "303" "保存显示模式"
@@ -295,39 +351,62 @@ assert_eq "$(http_code /api/download "{\"auth\":\"$STUDENT\",\"which\":\"$SUB\",
 echo "==> 账号入口与角色身份隔离"
 assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/user")" "303" "未登录访问账号中心"
 assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' "$BASE/user")" "$BASE/login/account" "未登录账号中心跳转登录页"
-if grep -q 'sc_uid' "$TMP/tea-cookie"; then fail "角色登录不应建立账号会话 sc_uid"; fi
-assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/user")" "303" "仅角色身份访问账号中心"
-assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$TMP/tea-cookie" "$BASE/user")" "$BASE/login/account" "角色身份不反查账号"
-assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$TMP/tea-cookie" "$BASE/login/account")" "200" "账号登录页可直接访问"
-ACCOUNT_LOGIN_HTML="$(curl -sS -b "$TMP/tea-cookie" "$BASE/login/account")"
+# 只保留 sc_sid 的纯角色会话：不应能访问账号中心，也不应反查账号。
+ROLE_ONLY_COOKIE="$TMP/role-only-cookie"
+grep -v $'\tsc_uid\t' "$TMP/tea-cookie" > "$ROLE_ONLY_COOKIE"
+if grep -q 'sc_uid' "$ROLE_ONLY_COOKIE"; then fail "角色会话不应包含 sc_uid"; fi
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$ROLE_ONLY_COOKIE" "$BASE/user")" "303" "仅角色身份访问账号中心"
+assert_eq "$(curl -sS -o /dev/null -w '%{redirect_url}' -b "$ROLE_ONLY_COOKIE" "$BASE/user")" "$BASE/login/account" "角色身份不反查账号"
+assert_eq "$(curl -sS -o /dev/null -w '%{http_code}' -b "$ROLE_ONLY_COOKIE" "$BASE/login/account")" "200" "账号登录页可直接访问"
+ACCOUNT_LOGIN_HTML="$(curl -sS -b "$ROLE_ONLY_COOKIE" "$BASE/login/account")"
 grep -q "账号中心" <<<"$ACCOUNT_LOGIN_HTML" || fail "账号登录页未渲染"
 if grep -q '@\[strings/' <<<"$ACCOUNT_LOGIN_HTML"; then fail "账号登录页存在未替换的字符串标签"; fi
 
 echo "==> 账号中心表单（用户 / 偏好 / 密码 / 删除身份）"
-USER_COOKIE="$TMP/user-cookie"
-assert_eq "$(curl -sS -c "$USER_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'username=student&password=student123' "$BASE/user/login")" "303" "账号登录"
+# 旧密码表单入口已升级为前端非对称流程：没有 JS 的表单提交不再建立会话。
+curl -sS -D "$TMP/old-login-headers" -o /dev/null -X POST \
+  -d 'username=student&password=student123' "$BASE/user/login"
+if grep -qi '^set-cookie:.*sc_uid=' "$TMP/old-login-headers"; then
+  fail "旧密码表单登录不应再建立账号会话"
+fi
+
+USER_LOGIN="$(account_login student student123)"
+USER_COOKIE="$(jq -r .cookie <<<"$USER_LOGIN")"
 USER_HTML="$(curl -sS -b "$USER_COOKIE" "$BASE/user")"
 grep -q "我的班级身份" <<<"$USER_HTML" || fail "账号中心未渲染"
 grep -q "陈小满" <<<"$USER_HTML" || fail "账号中心未显示账号本人"
+grep -q 'data-auth-password' <<<"$USER_HTML" || fail "账号中心缺少非对称改密表单标记"
 
-# 账号会话与角色会话同时存在时，/user 只看 sc_uid，不能串到角色绑定的用户。
+# 账号会话与角色会话同时存在时，/user 只看 sc_uid，不能串到角色身份。
+# 这里组合「老师账号的 sc_uid」+「学生身份的 sc_sid」，账号中心必须显示老师。
+STUDENT_ROLE_JAR="$TMP/student-role-jar"
+role_cookie student student123 "$STUDENT" "$STUDENT_ROLE_JAR"
+TEA_LOGIN="$(account_login teacher teacher123)"
 MIXED_COOKIE="$TMP/mixed-cookie"
-curl -sS -c "$MIXED_COOKIE" -o /dev/null -X POST -d 'username=student&password=student123' "$BASE/user/login"
-curl -sS -c "$MIXED_COOKIE" -b "$MIXED_COOKIE" -o /dev/null -X POST -d "key=$TEACHER" "$BASE/login/pc/teacher"
+cookie_jar "$MIXED_COOKIE" "$(jq -r .cookie <<<"$TEA_LOGIN")"
+grep -v $'\tsc_uid\t' "$STUDENT_ROLE_JAR" >> "$MIXED_COOKIE"
 MIXED_HTML="$(curl -sS -b "$MIXED_COOKIE" "$BASE/user")"
-grep -q "陈小满" <<<"$MIXED_HTML" || fail "混合会话下账号中心未显示账号本人"
-if grep -q "林书言" <<<"$MIXED_HTML"; then fail "混合会话下账号中心被角色身份覆盖"; fi
+grep -q "林书言" <<<"$MIXED_HTML" || fail "混合会话下账号中心未显示 sc_uid 账号本人"
+if grep -q "陈小满" <<<"$MIXED_HTML"; then fail "混合会话下账号中心被角色身份覆盖"; fi
 
-REG_COOKIE="$TMP/reg-cookie"
-assert_eq "$(curl -sS -c "$REG_COOKIE" -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST \
-  --data-urlencode 'username=smokeuser' --data-urlencode 'password=pass1234' \
-  --data-urlencode 'password2=pass1234' --data-urlencode 'key=SC-STU-DEMO-2026-02' \
-  "$BASE/user/register")" "303" "账号注册并绑定密钥"
+# 注册 + 登录（公钥由客户端派生；注册接口不接受密码）。
+REG_JSON="$(node "$AUTH_CLIENT" register --base "$BASE" --username smokeuser --password pass1234 --key SC-STU-DEMO-2026-02)"
+assert_jq "$REG_JSON" '.ok == true and (.auths | index("SC-STU-DEMO-2026-02"))' "账号注册并绑定密钥"
+REG_COOKIE="$(jq -r .cookie <<<"$REG_JSON")"
 REG_HTML="$(curl -sS -b "$REG_COOKIE" "$BASE/user")"
 grep -q "SC-STU-DEMO-2026-02" <<<"$REG_HTML" || fail "注册后未显示绑定密钥"
 assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'display_name=Smoke&theme=dark&mode=pc' "$BASE/user/prefs")" "303" "保存偏好"
-assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'old=pass1234&new=pass5678&new2=pass5678' "$BASE/user/password")" "303" "修改密码"
-assert_eq "$(curl -sS -c "$TMP/relogin-cookie" -o /dev/null -w '%{http_code}' -X POST -d 'username=smokeuser&password=pass5678' "$BASE/user/login")" "303" "新密码登录"
+
+# 改密：旧密码只用于本地挑战验证；服务端只保存新公钥。
+RESET_JSON="$(node "$AUTH_CLIENT" reset --base "$BASE" --username smokeuser --old-password pass1234 --new-password pass5678)"
+assert_jq "$RESET_JSON" '.ok == true' "修改密码"
+if node "$AUTH_CLIENT" login --base "$BASE" --username smokeuser --password pass1234 >/dev/null 2>&1; then
+  fail "旧密码在改密后仍然可以登录"
+fi
+NEW_LOGIN="$(account_login smokeuser pass5678)"
+assert_jq "$NEW_LOGIN" '.ok == true' "新密码登录"
+REG_COOKIE="$(jq -r .cookie <<<"$NEW_LOGIN")"
+
 AUTH_ID="$(grep -o 'name="auth_id" value="[^"]*"' <<<"$REG_HTML" | head -1 | cut -d'"' -f4)"
 [[ -n "$AUTH_ID" ]] || fail "未找到待删除的 auth id"
 assert_eq "$(curl -sS -b "$REG_COOKIE" -o /dev/null -w '%{http_code}' -X POST "$BASE/user/auth/$AUTH_ID/delete")" "303" "删除自己的身份"
@@ -341,8 +420,9 @@ assert_jq "$RENAME_T" ".ok == true and .name == \"$NEW_TEACHER_NAME\"" "rename-a
 ALL_RENAMED="$(post /api/all-submission "{\"auth\":\"$TEACHER\",\"match_mode\":\"All\"}")"
 assert_jq "$ALL_RENAMED" ".datas[] | select(.id == \"$SUB\") | .createdBy == \"$NEW_TEACHER_NAME\"" "改名同步征集发布者"
 curl -sS -b "$TMP/tea-cookie" "$BASE/home/pc/teachers/" | grep -q "$NEW_TEACHER_NAME" || fail "老师空间未显示新名称"
-TEA_USER_COOKIE="$TMP/tea-user-cookie"
-assert_eq "$(curl -sS -c "$TEA_USER_COOKIE" -o /dev/null -w '%{http_code}' -X POST -d 'username=teacher&password=teacher123' "$BASE/user/login")" "303" "老师账号登录"
+TEA_USER_LOGIN="$(account_login teacher teacher123)"
+assert_jq "$TEA_USER_LOGIN" '.ok == true and (.auths | index("SC-TEA-DEMO-2026"))' "老师账号登录"
+TEA_USER_COOKIE="$(jq -r .cookie <<<"$TEA_USER_LOGIN")"
 ACCOUNT_HTML="$(curl -sS -b "$TEA_USER_COOKIE" "$BASE/user")"
 grep -q 'data-rename=' <<<"$ACCOUNT_HTML" || fail "账号中心缺少改名入口"
 if grep -q '@\[strings/' <<<"$ACCOUNT_HTML"; then fail "账号中心存在未替换的字符串标签"; fi

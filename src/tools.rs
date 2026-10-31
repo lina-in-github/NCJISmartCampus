@@ -115,7 +115,17 @@ pub fn js_json<T: Serialize>(v: &T) -> String {
         .replace('\u{2029}', "\\u2029")
 }
 
-/// 校验 auth 改名后的显示名称。
+/// 账号用户名：2–32 个字符，只允许中英文、数字、下划线、短横线。
+pub fn valid_username(name: &str) -> bool {
+    let n = name.trim().chars().count();
+    (2..=32).contains(&n)
+        && name
+            .trim()
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+}
+
+/// 校验 auth / 账号的显示名称。
 pub fn clean_display_name(raw: &str) -> Result<String, String> {
     let name = raw.trim();
     if name.is_empty() {

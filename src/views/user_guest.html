@@ -11,20 +11,21 @@
       {flash}
       {note}
       <div class="login-pair">
-        <form class="login-form" method="post" action="/user/login">
+        <form class="login-form" method="post" action="/user/login" data-auth-login>
           <div class="field">
             <label class="label" for="username">@[strings/account_username]</label>
             <input class="input" id="username" name="username" type="text" autocomplete="username" required>
           </div>
           <div class="field">
             <label class="label" for="password">@[strings/account_password]</label>
-            <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+            <input class="input" id="password" type="password" autocomplete="current-password" required>
           </div>
           <button class="btn primary block" type="submit">{lock}@[strings/account_login]</button>
           <p class="hint mt-sm">@[strings/account_demo_accounts]</p>
+          <p class="hint mt-sm">@[strings/account_password_local]</p>
         </form>
         <div class="auth-divider">@[strings/account_first_use]</div>
-        <form class="login-form" method="post" action="/user/register">
+        <form class="login-form" method="post" action="/user/register" data-auth-register>
           <div class="form-grid">
             <div class="field">
               <label class="label" for="new-username">@[strings/account_username]</label>
@@ -32,11 +33,11 @@
             </div>
             <div class="field">
               <label class="label" for="new-password">@[strings/account_password]</label>
-              <input class="input" id="new-password" name="password" type="password" autocomplete="new-password" minlength="6" required>
+              <input class="input" id="new-password" type="password" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="field">
               <label class="label" for="new-password2">@[strings/account_confirm_password]</label>
-              <input class="input" id="new-password2" name="password2" type="password" autocomplete="new-password" minlength="6" required>
+              <input class="input" id="new-password2" type="password" autocomplete="new-password" minlength="6" required>
             </div>
             <div class="field">
               <label class="label" for="claim-key">@[strings/login_key_label]</label>
